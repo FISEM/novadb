@@ -23,8 +23,11 @@ that speaks SQL can still query the underlying tables directly.
 
 ## Try it in 30 seconds
 
+Needs the Rust toolchain ([rustup.rs](https://rustup.rs) if you don't have
+it — `cargo --version` to check).
+
 ```sh
-git clone <this repo> && cd novadb
+git clone https://github.com/FISEM/novadb.git && cd novadb
 cargo run -p server -- --data-file demo.redb --bind 127.0.0.1:8801 &
 curl -X POST http://127.0.0.1:8801/sql --data-binary "
   CREATE TABLE person (id INTEGER PRIMARY KEY, name TEXT);
