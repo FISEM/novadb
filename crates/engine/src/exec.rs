@@ -179,24 +179,11 @@ impl<'a> ExecCtx<'a> {
 
         for join in &core.joins {
             let (alias, right_rows) = self.resolve_source(&join.table)?;
-            let mut next = Vec::new();
-            for left_row in &rows {
-                let mut matched = false;
-                for right_row in &right_rows {
-                    let mut candidate = left_row.clone();
-                    candidate.sources.push((alias.clone(), right_row.clone()));
-                    if is_truthy(&eval_expr(&candidate, &join.on)?) {
-                        matched = true;
-                        next.push(candidate);
-                    }
-                }
-                if !matched && matches!(join.kind, JoinKind::Left) {
-                    let mut candidate = left_row.clone();
-                    candidate.sources.push((alias.clone(), Map::new()));
-                    next.push(candidate);
-                }
-            }
-            rows = next;
+            rows = if let Some((right_key, left_key, residual)) = find_equi_key(&join.on, &alias) {
+                hash_join(rows, &right_rows, &alias, join.kind.clone(), &right_key, &left_key, &residual)?
+            } else {
+                nested_loop_join(rows, &right_rows, &alias, join.kind.clone(), &join.on)?
+            };
         }
 
         if let Some(filter) = &core.filter {
@@ -267,6 +254,174 @@ impl<'a> ExecCtx<'a> {
 
         Ok(out)
     }
+}
+
+fn nested_loop_join(
+    rows: Vec<Row>,
+    right_rows: &[Map<String, Value>],
+    alias: &str,
+    kind: JoinKind,
+    on: &Expr,
+) -> Result<Vec<Row>> {
+    let mut next = Vec::new();
+    for left_row in &rows {
+        let mut matched = false;
+        for right_row in right_rows {
+            let mut candidate = left_row.clone();
+            candidate.sources.push((alias.to_string(), right_row.clone()));
+            if is_truthy(&eval_expr(&candidate, on)?) {
+                matched = true;
+                next.push(candidate);
+            }
+        }
+        if !matched && matches!(kind, JoinKind::Left) {
+            let mut candidate = left_row.clone();
+            candidate.sources.push((alias.to_string(), Map::new()));
+            next.push(candidate);
+        }
+    }
+    Ok(next)
+}
+
+/// Equi-join fast path: buckets `right_rows` by `right_key` (an expression
+/// referencing only the joined table) so each left row does a single hash
+/// lookup keyed by `left_key` instead of scanning every right row. Any
+/// remaining ON conjuncts (`residual`) are still checked per candidate, so
+/// results match `nested_loop_join` exactly — this only changes complexity,
+/// not semantics.
+fn hash_join(
+    rows: Vec<Row>,
+    right_rows: &[Map<String, Value>],
+    alias: &str,
+    kind: JoinKind,
+    right_key: &Expr,
+    left_key: &Expr,
+    residual: &[Expr],
+) -> Result<Vec<Row>> {
+    let mut buckets: HashMap<JoinKey, Vec<&Map<String, Value>>> = HashMap::new();
+    for right_row in right_rows {
+        let right_only = Row::single(alias.to_string(), right_row.clone());
+        let key = join_key(&eval_expr(&right_only, right_key)?);
+        buckets.entry(key).or_default().push(right_row);
+    }
+
+    let mut next = Vec::new();
+    for left_row in &rows {
+        let key = join_key(&eval_expr(left_row, left_key)?);
+        let mut matched = false;
+        if let Some(candidates) = buckets.get(&key) {
+            for right_row in candidates {
+                let mut candidate = left_row.clone();
+                candidate.sources.push((alias.to_string(), (*right_row).clone()));
+                let mut ok = true;
+                for cond in residual {
+                    if !is_truthy(&eval_expr(&candidate, cond)?) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if ok {
+                    matched = true;
+                    next.push(candidate);
+                }
+            }
+        }
+        if !matched && matches!(kind, JoinKind::Left) {
+            let mut candidate = left_row.clone();
+            candidate.sources.push((alias.to_string(), Map::new()));
+            next.push(candidate);
+        }
+    }
+    Ok(next)
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum JoinKey {
+    Num(u64),
+    Exact(String),
+}
+
+fn join_key(v: &Value) -> JoinKey {
+    match as_f64(v) {
+        Some(mut f) => {
+            if f == 0.0 {
+                f = 0.0; // normalize -0.0 so it hashes the same as 0.0
+            }
+            JoinKey::Num(f.to_bits())
+        }
+        None => JoinKey::Exact(v.to_string()),
+    }
+}
+
+fn flatten_and(expr: &Expr, out: &mut Vec<Expr>) {
+    match expr {
+        Expr::BinaryOp { left, op: BinOp::And, right } => {
+            flatten_and(left, out);
+            flatten_and(right, out);
+        }
+        other => out.push(other.clone()),
+    }
+}
+
+fn expr_refs_alias(expr: &Expr, alias: &str) -> bool {
+    match expr {
+        Expr::Column(c) => c.table.as_deref() == Some(alias),
+        Expr::Literal(_) | Expr::CountStar => false,
+        Expr::BinaryOp { left, right, .. } => expr_refs_alias(left, alias) || expr_refs_alias(right, alias),
+        Expr::UnaryOp { expr, .. } => expr_refs_alias(expr, alias),
+        Expr::IsNull { expr, .. } => expr_refs_alias(expr, alias),
+        Expr::Between { expr, low, high, .. } => {
+            expr_refs_alias(expr, alias) || expr_refs_alias(low, alias) || expr_refs_alias(high, alias)
+        }
+        Expr::InList { expr, list, .. } => expr_refs_alias(expr, alias) || list.iter().any(|e| expr_refs_alias(e, alias)),
+        Expr::FunctionCall { args, .. } => args.iter().any(|e| expr_refs_alias(e, alias)),
+    }
+}
+
+/// True iff every column `expr` touches is qualified with `alias` (so it can
+/// be evaluated against a lone row from that table, with no other sources).
+fn expr_only_references(expr: &Expr, alias: &str) -> bool {
+    match expr {
+        Expr::Column(c) => c.table.as_deref() == Some(alias),
+        Expr::Literal(_) | Expr::CountStar => true,
+        Expr::BinaryOp { left, right, .. } => expr_only_references(left, alias) && expr_only_references(right, alias),
+        Expr::UnaryOp { expr, .. } => expr_only_references(expr, alias),
+        Expr::IsNull { expr, .. } => expr_only_references(expr, alias),
+        Expr::Between { expr, low, high, .. } => {
+            expr_only_references(expr, alias) && expr_only_references(low, alias) && expr_only_references(high, alias)
+        }
+        Expr::InList { expr, list, .. } => {
+            expr_only_references(expr, alias) && list.iter().all(|e| expr_only_references(e, alias))
+        }
+        Expr::FunctionCall { args, .. } => args.iter().all(|e| expr_only_references(e, alias)),
+    }
+}
+
+/// Looks for an `ON` conjunct of the form `<right_alias-only expr> = <expr
+/// not touching right_alias>` (in either order). Returns the right-side key
+/// expression, the left-side key expression, and the remaining conjuncts
+/// that still need a row-by-row check after the hash lookup narrows things
+/// down. `None` if no such equality conjunct exists (e.g. the ON clause is
+/// a plain inequality, or every equality mixes columns from both sides).
+fn find_equi_key(on: &Expr, right_alias: &str) -> Option<(Expr, Expr, Vec<Expr>)> {
+    let mut conjuncts = Vec::new();
+    flatten_and(on, &mut conjuncts);
+    for i in 0..conjuncts.len() {
+        let Expr::BinaryOp { left, op: BinOp::Eq, right } = &conjuncts[i] else { continue };
+        let sides = if expr_only_references(left, right_alias) && !expr_refs_alias(right, right_alias) {
+            Some((left.as_ref().clone(), right.as_ref().clone()))
+        } else if expr_only_references(right, right_alias) && !expr_refs_alias(left, right_alias) {
+            Some((right.as_ref().clone(), left.as_ref().clone()))
+        } else {
+            None
+        };
+        if let Some((right_key, left_key)) = sides {
+            let mut residual = conjuncts.clone();
+            residual.remove(i);
+            return Some((right_key, left_key, residual));
+        }
+    }
+    None
 }
 
 fn dedup_keep_order(rows: &mut Vec<Map<String, Value>>) {
