@@ -1,0 +1,13 @@
+[package]
+name = "cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "novadb"
+path = "src/main.rs"
+
+[dependencies]
+ureq = { version = "2", features = ["json"] }
+serde_json = { workspace = true }
+clap = { version = "4", features = ["derive"] }

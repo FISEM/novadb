@@ -1,0 +1,4 @@
+/target
+*.redb
+Cargo.lock.bak
+*.log
