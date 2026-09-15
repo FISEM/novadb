@@ -108,16 +108,24 @@ impl Parser {
             false
         };
         let name = self.expect_ident()?;
-        self.expect(&Token::LParen, "(")?;
-        let mut columns = Vec::new();
-        loop {
-            columns.push(self.parse_column_def()?);
-            if self.eat(&Token::Comma) {
-                continue;
+        // The column list is optional: `CREATE TABLE foo;` with no `(...)` at
+        // all creates a schemaless table (a document collection, à la
+        // MongoDB) — rows can carry any fields, since INSERT already doesn't
+        // validate column names against the declared schema.
+        let columns = if self.eat(&Token::LParen) {
+            let mut cols = Vec::new();
+            loop {
+                cols.push(self.parse_column_def()?);
+                if self.eat(&Token::Comma) {
+                    continue;
+                }
+                break;
             }
-            break;
-        }
-        self.expect(&Token::RParen, ")")?;
+            self.expect(&Token::RParen, ")")?;
+            cols
+        } else {
+            Vec::new()
+        };
         Ok(CreateTableStmt { name, if_not_exists, columns })
     }
 

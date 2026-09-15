@@ -1,25 +1,32 @@
 # novadb
 
-**Graph queries in plain SQL.** novadb is a small database engine that
-gives you SurrealDB-style graph traversal — reachability, multi-hop
-relationships, cycles handled correctly — without a proprietary query
-language. If you already know `SELECT`/`JOIN`/`WHERE`, you already know
-almost all of it.
+**Relational, document, and graph — one engine, plain SQL.** novadb gives
+you the range SurrealDB is known for: typed tables when you want structure,
+MongoDB-style schemaless collections when you don't, and graph traversal for
+relationships — without a proprietary query language. If you already know
+`SELECT`/`JOIN`/`WHERE`, you already know almost all of it.
 
 ```sql
+-- relational: typed columns, like always
 CREATE TABLE person (id INTEGER PRIMARY KEY, name TEXT);
-CREATE TABLE edges (id INTEGER PRIMARY KEY, from_id INTEGER, to_id INTEGER, label TEXT);
 
+-- document: no columns declared, any shape per row — a real collection
+CREATE TABLE session;
+INSERT INTO session (device, cart) VALUES ('mobile', '{"items": 3}');
+
+-- graph: relationships as data, traversed with sugar over a plain edges table
+CREATE TABLE edges (id INTEGER PRIMARY KEY, from_id INTEGER, to_id INTEGER, label TEXT);
 INSERT INTO edges (from_id, to_id, label) VALUES (1, 2, 'knows'), (2, 3, 'knows');
 
 -- "who does alice know, directly or transitively?" — any depth, cycle-safe
 SELECT p2.name FROM person p1 > knows* > person p2 WHERE p1.id = 1;
 ```
 
-No `->edge->table` grammar to learn, no wire protocol to configure — just
-SQL plus one small piece of sugar (`>`) that compiles straight down to a
-`JOIN` (or a `WITH RECURSIVE` for the `*` variable-depth case). Any tool
-that speaks SQL can still query the underlying tables directly.
+No `->edge->table` grammar, no `db.collection.insertOne`, no wire protocol to
+configure — just SQL, plus one small piece of sugar (`>`) that compiles
+straight down to a `JOIN` (or a `WITH RECURSIVE` for the `*` variable-depth
+case). Any tool that speaks SQL can still query every table directly, schemaless
+ones included.
 
 **[Try it in your browser →](https://claude.ai/artifact/7G6g4qj5qoovtQob5gvhv9)**
 No install, no server — the real engine compiled to WebAssembly, running
@@ -60,17 +67,37 @@ it from that directory once `pkg/` exists.
   `OFFSET`, `WITH [RECURSIVE]` CTEs, `UNION [ALL]`, aggregates (`COUNT`,
   `SUM`, `AVG`, `MIN`, `MAX`), scalar functions (`UPPER`, `LOWER`,
   `LENGTH`, `ABS`, `ROUND`, `COALESCE`, `CONCAT`).
-- **Document side**: a `JSON`/`JSONB` column type with `->`/`->>`
-  operators, for schemaless fields alongside your typed columns.
-- **Graph side**: the `>` traversal sugar above — single hop, chained
-  fixed hops, or `*` for "any depth", all over a plain `edges` table you
-  fully control.
+- **Document collections**: `CREATE TABLE foo;` with no column list makes
+  a schemaless table — every row can carry different fields, like a
+  MongoDB collection — plus a `JSON`/`JSONB` column type with `->`/`->>`
+  operators for nested fields inside an otherwise typed table.
+- **Graph traversal**: the `>` sugar above — single hop, chained fixed
+  hops, or `*` for "any depth", all over a plain `edges` table you fully
+  control.
 - **Simple transport**: `POST /sql` over plain HTTP, JSON in and out. No
   driver, no wire protocol, `curl` works fine.
 
 String literals use single quotes (`'text'`); double quotes are for
 quoted identifiers, per the SQL standard — this trips up anyone coming
 from languages that treat `"..."` as a string.
+
+### More document examples
+
+```sql
+CREATE TABLE session;
+
+INSERT INTO session (user_id, device) VALUES (1, 'mobile');
+INSERT INTO session (payload, ts) VALUES ('{"foo": "bar"}', 12345);
+
+SELECT * FROM session;
+-- both rows come back, each keeping only the fields it was given
+```
+
+`INSERT` never validates column names against a declared schema — that's
+true for every table, not just schemaless ones — so this works precisely
+because nothing stops you from inserting fields nobody declared. A typed
+`CREATE TABLE` is a convention your queries can rely on, not a constraint
+the engine enforces (yet).
 
 ### More graph examples
 
@@ -117,5 +144,8 @@ it.
 
 Early and single-node: no authentication, no clustering, no secondary
 indexes (joins are fast, but a full table scan still backs every query),
-no automated test suite yet. Treat it as a prototype to build against and
-break, not a production datastore.
+no automated test suite yet. Schema declarations aren't enforced — that's
+what makes document collections possible, but it also means a typed
+`CREATE TABLE` today is documentation, not a guarantee; nothing stops a
+mistyped `INSERT` from smuggling in a field that doesn't belong. Treat it
+as a prototype to build against and break, not a production datastore.
