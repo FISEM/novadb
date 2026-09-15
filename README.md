@@ -21,6 +21,10 @@ SQL plus one small piece of sugar (`>`) that compiles straight down to a
 `JOIN` (or a `WITH RECURSIVE` for the `*` variable-depth case). Any tool
 that speaks SQL can still query the underlying tables directly.
 
+**[Try it in your browser →](https://claude.ai/artifact/7G6g4qj5qoovtQob5gvhv9)**
+No install, no server — the real engine compiled to WebAssembly, running
+entirely client-side.
+
 ## Try it in 30 seconds
 
 Needs the Rust toolchain ([rustup.rs](https://rustup.rs) if you don't have
@@ -41,6 +45,13 @@ Or use the bundled REPL instead of curl:
 ```sh
 cargo run -p cli -- --url http://127.0.0.1:8801
 ```
+
+To build the browser playground yourself instead of using the hosted one
+above: `crates/wasm` compiles the engine to WebAssembly via `wasm-bindgen`
+(`cargo build -p novadb-wasm --target wasm32-unknown-unknown --release`,
+then `wasm-bindgen --target web --out-dir crates/wasm/pkg <wasm file>`),
+and `crates/wasm/playground.html` is the static page that loads it — open
+it from that directory once `pkg/` exists.
 
 ## What you get
 

@@ -1,0 +1,12 @@
+[package]
+name = "novadb-wasm"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+engine = { path = "../engine" }
+wasm-bindgen = "0.2"
+serde_json = { workspace = true }

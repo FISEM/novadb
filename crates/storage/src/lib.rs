@@ -66,7 +66,17 @@ fn id_from_key(key: &str, table: &str) -> u64 {
 
 impl Store {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let db = Database::create(path)?;
+        Self::from_db(Database::create(path)?)
+    }
+
+    /// Opens a database backed entirely by memory, no filesystem required.
+    /// Used by the WASM build, where there is no filesystem to speak of.
+    pub fn open_in_memory() -> Result<Self> {
+        let db = Database::builder().create_with_backend(redb::backends::InMemoryBackend::new())?;
+        Self::from_db(db)
+    }
+
+    fn from_db(db: Database) -> Result<Self> {
         // Ensure tables exist.
         let txn = db.begin_write()?;
         {

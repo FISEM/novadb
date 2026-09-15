@@ -2,3 +2,4 @@
 *.redb
 Cargo.lock.bak
 *.log
+crates/wasm/pkg/

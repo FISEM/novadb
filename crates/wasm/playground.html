@@ -1,0 +1,382 @@
+<title>novadb Playground</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    /* dark palette (default ground for this console) */
+    --bg: #10161a;
+    --surface: #172029;
+    --surface-2: #1d2731;
+    --border: #263039;
+    --text: #e7ecee;
+    --text-dim: #8b98a1;
+    --accent-graph: #e3a039; /* traversal / edges */
+    --accent-sql: #49a99b;   /* relational / schema */
+    --on-accent: #14191c;
+    --ok: #5fb27c;
+    --err: #e2726b;
+    --code-bg: #0b0f12;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 18px 36px -22px rgba(0, 0, 0, 0.6);
+    --dot: rgba(231, 236, 238, 0.06);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f3f5f6;
+      --surface: #ffffff;
+      --surface-2: #eef1f2;
+      --border: #dce2e5;
+      --text: #14191c;
+      --text-dim: #5b6670;
+      --code-bg: #eef1f2;
+      --shadow: 0 1px 2px rgba(20, 25, 28, 0.05), 0 18px 30px -22px rgba(20, 25, 28, 0.2);
+      --dot: rgba(20, 25, 28, 0.07);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f3f5f6;
+    --surface: #ffffff;
+    --surface-2: #eef1f2;
+    --border: #dce2e5;
+    --text: #14191c;
+    --text-dim: #5b6670;
+    --code-bg: #eef1f2;
+    --shadow: 0 1px 2px rgba(20, 25, 28, 0.05), 0 18px 30px -22px rgba(20, 25, 28, 0.2);
+    --dot: rgba(20, 25, 28, 0.07);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background-color: var(--bg);
+    background-image: radial-gradient(var(--dot) 1px, transparent 1px);
+    background-size: 24px 24px;
+    color: var(--text);
+    font-family: "Manrope", ui-sans-serif, system-ui, sans-serif;
+    padding: 28px 20px 48px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+
+  code, .mono { font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace; }
+
+  header.top {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 10px 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 9px; }
+  .brand svg { display: block; flex-shrink: 0; }
+  .wordmark { font-weight: 800; font-size: 24px; letter-spacing: -0.02em; }
+  .wordmark .dot { color: var(--accent-graph); }
+  .top-right { display: flex; align-items: center; gap: 16px; }
+  .tagline {
+    flex-basis: 100%; color: var(--text-dim); font-size: 14.5px; font-weight: 500;
+    text-wrap: balance; margin: 0;
+  }
+  .status {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12px; font-weight: 600; color: var(--text-dim);
+    border: 1px solid var(--border); border-radius: 100px; padding: 5px 12px 5px 10px;
+    white-space: nowrap; background: var(--surface);
+  }
+  .status .led {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim);
+    box-shadow: 0 0 0 0 transparent; transition: background .2s, box-shadow .2s;
+  }
+  @keyframes pulse-led {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 45%, transparent); }
+    50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 0%, transparent); }
+  }
+  .status[data-live="1"] .led { background: var(--ok); animation: pulse-led 2.4s ease-in-out infinite; }
+  a.repo-link {
+    color: var(--text-dim); font-size: 12.5px; font-weight: 600; text-decoration: none;
+    border-bottom: 1px solid transparent; transition: color .15s, border-color .15s;
+  }
+  a.repo-link:hover { color: var(--text); border-color: var(--text-dim); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .status[data-live="1"] .led { animation: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+  }
+
+  section.panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap;
+  }
+  .label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-dim);
+  }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 12px 6px 6px; display: inline-flex; align-items: center; gap: 8px;
+    transition: border-color .15s, background .15s, transform .05s;
+  }
+  .chip:hover { border-color: var(--accent-graph); background: var(--surface); }
+  .chip:active { transform: translateY(1px); }
+  .chip .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; font-size: 10.5px; font-weight: 700;
+    background: var(--surface); color: var(--text-dim); border: 1px solid var(--border);
+    transition: border-color .15s, color .15s;
+  }
+  .chip:hover .num { border-color: var(--accent-graph); color: var(--accent-graph); }
+  .chip code {
+    font-family: "JetBrains Mono", monospace; font-size: 11.5px; font-weight: 500;
+    background: var(--code-bg); padding: 1px 5px; border-radius: 4px;
+  }
+
+  textarea#editor {
+    width: 100%; display: block; border: 0; resize: vertical;
+    background: var(--code-bg); color: var(--text);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 13.5px; line-height: 1.65; padding: 16px; min-height: 168px;
+    outline: none;
+  }
+  textarea#editor:focus { box-shadow: inset 0 0 0 2px var(--accent-graph); }
+
+  .run-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 14px; background: var(--surface-2); border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .hint { font-size: 12px; color: var(--text-dim); }
+  .hint kbd {
+    font-family: inherit; font-size: 11px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 5px;
+  }
+  .actions { display: flex; gap: 8px; }
+  button.run, button.reset {
+    font-family: "Manrope", sans-serif; font-weight: 700; font-size: 13.5px;
+    border-radius: 8px; padding: 8px 16px; cursor: pointer; border: 1px solid transparent;
+    transition: transform .12s ease, box-shadow .12s ease, filter .12s ease, background .15s, color .15s, border-color .15s;
+  }
+  button.run {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent-graph) 100%, white 8%), var(--accent-graph));
+    color: var(--on-accent);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset, 0 8px 18px -10px color-mix(in srgb, var(--accent-graph) 75%, transparent);
+  }
+  button.run:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset, 0 12px 22px -10px color-mix(in srgb, var(--accent-graph) 75%, transparent);
+  }
+  button.run:active:not(:disabled) { transform: translateY(0); }
+  button.run:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+  button.reset { background: transparent; color: var(--text-dim); border-color: var(--border); }
+  button.reset:hover { color: var(--text); border-color: var(--text-dim); background: var(--surface-2); }
+
+  #results { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
+  @keyframes result-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+  .result {
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface);
+    animation: result-in .25s ease both;
+  }
+  @media (prefers-reduced-motion: reduce) { .result { animation: none; } }
+  .result-head {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    font-size: 12px; font-weight: 700; border-bottom: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text-dim);
+  }
+  .badge { font-size: 11px; font-weight: 700; border-radius: 5px; padding: 2px 7px; }
+  .badge.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+  .badge.err { background: color-mix(in srgb, var(--err) 20%, transparent); color: var(--err); }
+  .result-body { padding: 12px; font-size: 13px; }
+  .result-body.empty-note { color: var(--text-dim); font-style: italic; }
+
+  .table-scroll { overflow-x: auto; }
+  table.rows { border-collapse: collapse; width: 100%; font-family: "JetBrains Mono", monospace; font-size: 12.5px; }
+  table.rows th, table.rows td {
+    text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  table.rows th { color: var(--text-dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  table.rows td { font-variant-numeric: tabular-nums; }
+  table.rows td.null { color: var(--text-dim); font-style: italic; }
+  table.rows tr:last-child td { border-bottom: none; }
+  table.rows tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--text) 3%, transparent); }
+  .row-count { color: var(--text-dim); font-size: 11px; font-weight: 600; }
+
+  .err-text { color: var(--err); font-family: "JetBrains Mono", monospace; font-size: 12.5px; }
+
+  footer.note {
+    color: var(--text-dim); font-size: 12.5px; text-align: center; line-height: 1.6;
+    padding-top: 18px; margin-top: 2px; border-top: 1px solid var(--border);
+  }
+  footer.note a { color: inherit; }
+
+  @media (max-width: 480px) {
+    body { padding: 16px 16px 40px; }
+    .wordmark { font-size: 22px; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 30 30" fill="none" aria-hidden="true">
+        <path d="M7 22L15 9L23 16" stroke="var(--border)" stroke-width="1.6" stroke-linecap="round"/>
+        <circle cx="7" cy="22" r="3.4" fill="var(--accent-sql)"/>
+        <circle cx="15" cy="9" r="3.4" fill="var(--accent-graph)"/>
+        <circle cx="23" cy="16" r="3.4" fill="var(--accent-sql)"/>
+      </svg>
+      <div class="wordmark">novadb<span class="dot">.</span></div>
+    </div>
+    <div class="top-right">
+      <span class="status" id="status" data-live="0"><span class="led"></span><span id="statusText">booting engine…</span></span>
+      <a class="repo-link" href="https://github.com/FISEM/novadb" target="_blank" rel="noopener">source →</a>
+    </div>
+    <p class="tagline">SQL you already know, plus graph traversal — no server, running in this tab.</p>
+  </header>
+
+  <section class="panel">
+    <div class="panel-head">
+      <span class="label">Try a snippet</span>
+      <div class="chips">
+        <button class="chip" data-snippet="setup"><span class="num">1</span>Build a social graph</button>
+        <button class="chip" data-snippet="hop"><span class="num">2</span>One hop <code>&gt;</code></button>
+        <button class="chip" data-snippet="star"><span class="num">3</span>Any depth <code>&gt;*</code></button>
+      </div>
+    </div>
+    <textarea id="editor" spellcheck="false"></textarea>
+    <div class="run-row">
+      <span class="hint">Semicolon-separated statements · <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> to run</span>
+      <div class="actions">
+        <button class="reset" id="resetBtn" type="button">Reset DB</button>
+        <button class="run" id="runBtn" type="button" disabled>Run</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><span class="label">Results</span></div>
+    <div id="results"></div>
+  </section>
+
+  <footer class="note">
+    Compiled from the real novadb Rust engine to WebAssembly — same parser, same executor. Each visitor gets a private, in-memory database that disappears on reload.
+  </footer>
+</div>
+
+<script type="module">
+  import init, { NovaDb } from './novadb_wasm.js';
+
+  const editor = document.getElementById('editor');
+  const runBtn = document.getElementById('runBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const resultsEl = document.getElementById('results');
+  const statusEl = document.getElementById('status');
+  const statusText = document.getElementById('statusText');
+
+  const SNIPPETS = {
+    setup: `CREATE TABLE person (id INTEGER PRIMARY KEY, name TEXT);
+CREATE TABLE edges (id INTEGER PRIMARY KEY, from_id INTEGER, to_id INTEGER, label TEXT);
+
+INSERT INTO person (id, name) VALUES (1, 'alice'), (2, 'bob'), (3, 'carol'), (4, 'dave');
+INSERT INTO edges (id, from_id, to_id, label) VALUES
+  (1, 1, 2, 'knows'), (2, 2, 3, 'knows'), (3, 3, 4, 'knows'), (4, 4, 1, 'knows');`,
+    hop: `-- who does alice know directly?
+SELECT p2.name FROM person p1 > knows > person p2 WHERE p1.id = 1;`,
+    star: `-- who can alice reach, any number of hops? (the graph above is cyclic — this still terminates)
+SELECT p2.name FROM person p1 > knows* > person p2 WHERE p1.id = 1;`,
+  };
+
+  let db = null;
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function formatCell(v) {
+    if (v === null || v === undefined) return '<td class="null">null</td>';
+    if (typeof v === 'object') return `<td>${escapeHtml(JSON.stringify(v))}</td>`;
+    return `<td>${escapeHtml(String(v))}</td>`;
+  }
+
+  function renderSelect(rows) {
+    if (rows.length === 0) return '<div class="empty-note">0 rows.</div>';
+    const cols = [];
+    for (const r of rows) for (const k of Object.keys(r)) if (!cols.includes(k)) cols.push(k);
+    const head = cols.map((c) => `<th>${escapeHtml(c)}</th>`).join('');
+    const body = rows.map((r) => `<tr>${cols.map((c) => formatCell(r[c])).join('')}</tr>`).join('');
+    return `<div class="table-scroll"><table class="rows"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
+      <div class="row-count" style="margin-top:6px;">${rows.length} row${rows.length === 1 ? '' : 's'}</div>`;
+  }
+
+  function summarize(result) {
+    switch (result.type) {
+      case 'inserted': return `inserted ${result.ids.length} row${result.ids.length === 1 ? '' : 's'} (id ${result.ids.join(', ')})`;
+      case 'updated': return `updated ${result.count} row${result.count === 1 ? '' : 's'}`;
+      case 'deleted': return `deleted ${result.count} row${result.count === 1 ? '' : 's'}`;
+      case 'created_table': return result.created ? `created table "${result.table}"` : `table "${result.table}" already existed`;
+      case 'dropped_table': return result.existed ? `dropped table "${result.table}"` : `table "${result.table}" did not exist`;
+      default: return '';
+    }
+  }
+
+  function renderResults(entries, { append } = {}) {
+    if (!append) resultsEl.innerHTML = '';
+    if (entries.length === 0) {
+      resultsEl.insertAdjacentHTML('beforeend', '<div class="empty-note">No statements executed.</div>');
+      return;
+    }
+    for (const entry of entries) {
+      const block = document.createElement('div');
+      block.className = 'result';
+      if (entry.status === 'ERR') {
+        block.innerHTML = `<div class="result-head"><span class="badge err">error</span></div>
+          <div class="result-body"><span class="err-text">${escapeHtml(entry.detail)}</span></div>`;
+      } else {
+        const r = entry.result;
+        const body = r.type === 'select' ? renderSelect(r.rows) : `<div class="empty-note">${escapeHtml(summarize(r))}</div>`;
+        block.innerHTML = `<div class="result-head"><span class="badge ok">${escapeHtml(r.type)}</span></div>
+          <div class="result-body">${body}</div>`;
+      }
+      resultsEl.appendChild(block);
+    }
+  }
+
+  function run(sql) {
+    if (!db) return;
+    let parsed;
+    try {
+      parsed = JSON.parse(db.execute(sql));
+    } catch (e) {
+      renderResults([{ status: 'ERR', detail: String(e) }]);
+      return;
+    }
+    renderResults(parsed);
+  }
+
+  runBtn.addEventListener('click', () => run(editor.value));
+  editor.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(editor.value); }
+  });
+  resetBtn.addEventListener('click', () => {
+    db = new NovaDb();
+    editor.value = SNIPPETS.setup;
+    run(editor.value);
+  });
+  for (const btn of document.querySelectorAll('.chip')) {
+    btn.addEventListener('click', () => {
+      editor.value = SNIPPETS[btn.dataset.snippet];
+      run(editor.value);
+    });
+  }
+
+  init()
+    .then(() => {
+      db = new NovaDb();
+      runBtn.disabled = false;
+      statusEl.dataset.live = '1';
+      statusText.textContent = 'live in your browser — nothing leaves this tab';
+      editor.value = SNIPPETS.setup + '\n\n' + SNIPPETS.star;
+      run(editor.value);
+    })
+    .catch((e) => {
+      statusText.textContent = 'engine failed to load';
+      renderResults([{ status: 'ERR', detail: String(e) }]);
+    });
+</script>
