@@ -31,4 +31,10 @@ impl NovaDb {
         };
         serde_json::to_string(&body).unwrap_or_default()
     }
+
+    /// Returns a JSON array of table names currently in the catalog.
+    pub fn list_tables(&self) -> String {
+        let names = self.db.list_tables().unwrap_or_default();
+        serde_json::to_string(&names).unwrap_or_default()
+    }
 }

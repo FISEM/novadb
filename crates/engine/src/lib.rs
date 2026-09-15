@@ -56,6 +56,10 @@ impl Database {
         Ok(Database { store: storage::Store::open_in_memory()? })
     }
 
+    pub fn list_tables(&self) -> Result<Vec<String>> {
+        Ok(self.store.list_tables()?)
+    }
+
     pub fn execute(&self, sql_text: &str) -> Result<Vec<ExecResult>> {
         let statements = sql::parse_statements(sql_text)?;
         let mut results = Vec::with_capacity(statements.len());
