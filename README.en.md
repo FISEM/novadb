@@ -4,10 +4,9 @@
 
 [![CI](https://github.com/FISEM/novadb/actions/workflows/ci.yml/badge.svg)](https://github.com/FISEM/novadb/actions/workflows/ci.yml)
 
-**Relational, document and graph — one engine, one pipeline.** Typed
-collections when you want structure, schemaless ones when you don't, and
-links you can walk. Not three query styles bolted together: the same steps,
-in the same order, over all three.
+A relational, document and graph database in one engine, with its own query
+language: **shutup**. Everything is a stream of records, and each step takes
+what the step above produced.
 
 ```
 person
@@ -17,69 +16,30 @@ person
     show name, age
 ```
 
-Read it top to bottom and that is the order it happens. There is no clause
-order to memorize, nothing written first that runs last.
+Read it top to bottom and that is the order it runs. Indentation is the
+pipeline; `|` does the same thing on one line.
 
-**The language is called shutup.** Not an accident — it is what the query
-does to the ceremony. No `SELECT`, no `FROM`, no `GROUP BY … HAVING`: you
-name a collection and say what to do with it, one step per line.
+## Trying it
 
-## Try it in your browser
-
-`playground/` is the real engine compiled to WebAssembly. No install, no
-server, nothing leaves the page.
+In a browser, with nothing installed — `playground/` holds the engine
+compiled to WebAssembly:
 
 ```sh
 cd playground && python3 -m http.server 8080
 ```
 
-It is a static directory, so any host will serve it. See
-[playground/README.md](playground/README.md).
-
-## Run it as a server
+As a server:
 
 ```sh
 cargo run -p server -- --data-file demo.redb --bind 127.0.0.1:8801
-
-curl -X POST http://127.0.0.1:8801/run --data-binary '
-person
-    where age > 30
-    show name, age
-'
+curl -X POST http://127.0.0.1:8801/run --data-binary 'person | where age > 30'
 ```
 
-Or use the bundled prompt, which draws the records as a table and points at
-your mistakes:
+At a prompt: `cargo run -p cli -- --url http://127.0.0.1:8801`
 
-```sh
-cargo run -p cli -- --url http://127.0.0.1:8801
-```
+Or just `cargo test --workspace`: 232 tests, no fixtures to set up.
 
-```
-shutup> person | take
-                     ^
-'take' needs a count after it.
-Write a whole number, like 'take 10'.
-```
-
-## Try it in 30 seconds
-
-Needs the Rust toolchain ([rustup.rs](https://rustup.rs) if you don't have
-it).
-
-```sh
-git clone https://github.com/FISEM/novadb.git && cd novadb
-cargo test --workspace
-```
-
-232 tests, no fixtures to set up. They are the fastest way to see what the
-language does — [`crates/engine/tests`](crates/engine/tests) reads like a
-tour.
-
-## The whole language
-
-Twelve steps, three statements, five counting words. If a word needs a
-glossary, it is the wrong word.
+## The language
 
 | Step | Does |
 |---|---|
@@ -95,42 +55,29 @@ glossary, it is the wrong word.
 
 `add` puts records in, `define` states a shape or names a pipeline, `remove`
 throws a collection away. Counting: `count()`, `total(x)`, `average(x)`,
-`lowest(x)`, `highest(x)`.
-
-Expressions are Python's — `and` / `or` / `not`, `in`, `is None`, chained
-comparisons like `18 < age < 65`, `len(name)`, `name.upper()` — and so is
-truthiness. `None` is an ordinary value: `None == None` is true, and there
-is no three-valued logic to hold in your head.
-
-Full reference: [docs/language.md](docs/language.md).
-
-### Three shapes, one pipeline
+`lowest(x)`, `highest(x)`. Expressions and truthiness are Python's;
+`None == None` is true.
 
 ```
-# relational — typed collections
+# relational
 define person { id: number key, name: string, age: number }
-person | where age > 30 | show name
 
 # document — no body, so every record may differ
 define session
 add session { device: "mobile", cart: 3 }
-add session { note: "a different shape entirely" }
 
-# graph — links in an ordinary collection you can read
+# graph — links live in an ordinary collection
 person | where name == "alice" | keep following knows | show name
 ```
 
-### Deleting is the same query, plus one line
+Deleting is the query you just read, plus a step:
 
 ```
-person | where age < 18            # look at them
-person | where age < 18 | delete   # remove exactly those
+person | where age < 18
+person | where age < 18 | delete
 ```
 
-In SQL you rewrite a `SELECT` into a `DELETE` and hope the `WHERE` survived
-the edit. Here the destructive query *is* the safe one with a step added.
-
-### It refuses rather than answering wrongly
+And reading a field a `show` dropped is an error rather than an empty list:
 
 ```
 person | show name | sort age
@@ -138,61 +85,31 @@ person | show name | sort age
 Move this step above the show, or add age to it.
 ```
 
-Every error names the thing, says what is wrong in a full sentence, and
-names the fix. Silently returning nothing is the failure this language
-exists to avoid.
-
-## Why it is built this way
-
-**The pipeline, not the clause list.** SQL's worst property is that reading
-order is not execution order, which is why you cannot build a query
-incrementally and why an alias defined in `SELECT` is unusable in `WHERE`.
-Every step here takes the records the step above produced. That single
-choice removes `HAVING` (it is `where` after a `show`), removes `COALESCE`
-(`a or b` already returns the first thing that is there), and makes a
-document collection and a graph traversal the same shape as a table scan.
-
-**Small on purpose.** What makes SurrealQL and EdgeQL hard is not their
-syntax, it is their size. The vocabulary above is the whole language, and
-keeping it that short is a decision defended query by query in
-[docs/design-notes.md](docs/design-notes.md), along with what was rejected
-and why.
-
-**Nothing is inferred.** Cypher decides your grouping key by looking at
-which parts of a projection are not aggregates, so adding a field silently
-changes what a query means. Here the grouping key is what you wrote after
-`group by`, and nowhere else.
-
-**No wire protocol.** `POST /run` over plain HTTP, JSON in and out —
-`curl` is a client. Speaking the Postgres wire protocol is a large,
-orthogonal project that adds nothing to what makes this engine useful.
+Full reference: [docs/language.md](docs/language.md). The reasoning behind
+each choice, and what was rejected: [docs/design-notes.md](docs/design-notes.md)
+and [docs/prior-art.md](docs/prior-art.md).
 
 ## Architecture
 
 | Crate | Role |
 |---|---|
-| [`lang`](crates/lang/src) | shutup: lexer, parser, syntax tree |
-| [`storage`](crates/storage/src) | key-value backend on [redb](https://github.com/cberner/redb); records are JSON |
-| [`engine`](crates/engine/src) | runs a pipeline over storage |
+| [`lang`](crates/lang/src) | shutup: lexer and parser |
+| [`storage`](crates/storage/src) | key-value on [redb](https://github.com/cberner/redb), records are JSON |
+| [`engine`](crates/engine/src) | runs a pipeline |
 | [`server`](crates/server/src) | HTTP server (axum) |
-| [`cli`](crates/cli/src) | prompt over HTTP |
+| [`cli`](crates/cli/src) | prompt |
 | [`wasm`](crates/wasm/src) | the engine in a browser |
 
 ## Status
 
-Early and single-node: no authentication, no clustering, no secondary
-indexes (a full scan backs every query, and `join` is still a nested loop).
-A shape is a claim, not a constraint — `define person { name: string }` will
-not stop `add person { nickname: "al" }` — which is what makes document
-collections possible and what makes a typed `define` documentation rather
-than a guarantee.
+A prototype. Single-node, no authentication, no clustering, no indexes
+(every query is a full scan and `join` is a nested loop). A declared shape
+is not enforced: `define person { name: string }` will not stop
+`add person { nickname: "al" }`.
 
-Not running yet, though they parse: `define … as` for naming a pipeline, and
-the built-in `collections` / `fields` / `queries`. The old SQL front end is
-still in the tree, with its own tests, until those land and it can go.
-
-Treat it as a prototype to build against and break, not a production
-datastore.
+`define … as` and the built-in `collections` / `fields` / `queries` parse
+but do not run yet. The old SQL front end is still in the tree with its
+tests.
 
 ## License
 
