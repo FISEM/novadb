@@ -1,14 +1,14 @@
-# nova — design notes
+# shutup — design notes
 
-> Why nova is the way it is. The reference is [language.md](language.md);
+> Why shutup is the way it is. The reference is [language.md](language.md);
 > this is the argument behind it, kept so the reasoning outlives the
 > decisions. Nothing here is implemented yet.
 
-nova replaces SQL in novadb.
+shutup replaces SQL in novadb.
 
 It has one design goal, and every decision below answers to it:
 
-> **A sixteen-year-old who has seen a little Python should read a nova query
+> **A sixteen-year-old who has seen a little Python should read a shutup query
 > and say what it does, without being taught the language first.**
 
 And one rule that enforces it:
@@ -18,7 +18,7 @@ And one rule that enforces it:
 > symbols that need explaining.
 
 That rule costs keystrokes and buys readers. Where a shorter, cleverer form
-would need explaining, nova takes the longer form that does not.
+would need explaining, shutup takes the longer form that does not.
 
 ---
 
@@ -250,7 +250,7 @@ called `HAVING`, because there is nothing left for it to do.
 
 **Nothing is inferred.** Cypher decides your grouping key by looking at
 which parts of the projection are not counting functions, so adding a field
-silently changes what the query means. In nova the grouping key is what is
+silently changes what the query means. In shutup the grouping key is what is
 written after `group by`, and nowhere else.
 
 ---
@@ -353,7 +353,7 @@ remove person if exists
 ## 8. Naming a piece of a pipeline
 
 SQL's worst structural failure is that it has no way to reuse a query
-except copy and paste. nova answers it with one idea and no new concepts
+except copy and paste. shutup answers it with one idea and no new concepts
 in the pipeline itself.
 
 ```
@@ -549,7 +549,7 @@ Python's, as far as they go.
 [1, 2, 3]                { a: 1, b: 2 }
 ```
 
-**Both quote characters make a string.** This is the one place nova breaks
+**Both quote characters make a string.** This is the one place shutup breaks
 with SQL on purpose. novadb's own README documents SQL's double-quote rule
 as the trap newcomers fall into; a language claiming to be easy does not
 keep a trap it has already named.
@@ -584,7 +584,7 @@ way today.
 `None` is an ordinary value. `None == None` is true. Sorting puts `None`
 first.
 
-nova has **no three-valued logic**. In SQL, `NULL = NULL` is neither true
+shutup has **no three-valued logic**. In SQL, `NULL = NULL` is neither true
 nor false, and `x NOT IN (…)` silently returns nothing when the list holds
 one `NULL`. That is the hardest rule in SQL to hold in your head, it
 produces wrong answers instead of errors, and novadb's engine already
@@ -676,4 +676,5 @@ Decided one way here, and reasonably decidable the other.
 4. **`sort` before `show`.** The spec says `sort` sees records before the
    projection drops fields. The alternative is to reject it and let the
    error teach the order. Section 11 shows the error either way.
-5. **The name.** `nova` collides with the database it queries.
+5. **The name.** Settled: the language is `shutup`, which also ends the
+   collision with `novadb` the earlier name had.

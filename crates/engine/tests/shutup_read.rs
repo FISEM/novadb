@@ -1,4 +1,4 @@
-//! Running nova pipelines: the reading steps.
+//! Running shutup pipelines: the reading steps.
 
 mod common;
 
@@ -6,7 +6,7 @@ use common::db;
 use engine::{Database, ExecResult};
 use serde_json::{json, Map, Value};
 
-/// Runs nova source, expecting every statement to succeed.
+/// Runs shutup source, expecting every statement to succeed.
 fn run(db: &Database, source: &str) -> Vec<ExecResult> {
     db.run(source).unwrap_or_else(|e| panic!("failed: {e}\n--- source ---\n{source}"))
 }

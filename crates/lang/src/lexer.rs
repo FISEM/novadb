@@ -1,4 +1,4 @@
-//! Turns nova source into tokens, including the indentation ones.
+//! Turns shutup source into tokens, including the indentation ones.
 //!
 //! Indentation is meaningful, so the lexer is where it stops being
 //! whitespace and becomes structure: a line indented further than the one

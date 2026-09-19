@@ -1,4 +1,4 @@
-//! Running nova pipelines: joining, grouping, and following links.
+//! Running shutup pipelines: joining, grouping, and following links.
 
 mod common;
 

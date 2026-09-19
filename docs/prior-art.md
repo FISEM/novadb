@@ -1,9 +1,9 @@
 # What the existing query languages get wrong
 
-Written before nova's grammar is fixed, so the design answers real failures
+Written before shutup's grammar is fixed, so the design answers real failures
 rather than imagined ones. Each entry asks two questions: what did this
-language get right that nova should keep, and what does it get wrong that
-nova must not repeat.
+language get right that shutup should keep, and what does it get wrong that
+shutup must not repeat.
 
 ---
 
@@ -75,7 +75,7 @@ is why people learn them in minutes. Standardised as ISO GQL in 2024.
 
 ## MongoDB — find and the aggregation pipeline
 
-**Right.** The aggregation pipeline is the model nova chose: `$match`,
+**Right.** The aggregation pipeline is the model shutup chose: `$match`,
 `$group`, `$sort`, `$project` compose, and reading order is execution order.
 It works, at scale, for a very large number of developers.
 
@@ -96,12 +96,12 @@ It works, at scale, for a very large number of developers.
 functions and variables, so it fixes SQL's composition gap outright. It
 compiles to SQL, so it runs on everything.
 
-**Wrong, for nova's purpose:** compiling to SQL means inheriting SQL's
+**Wrong, for shutup's purpose:** compiling to SQL means inheriting SQL's
 model. No documents, no traversal, and errors can surface as the target
 engine's SQL errors rather than the language's own. Still an early-adopter
 project.
 
-**The useful conclusion.** PRQL validates the syntax nova picked, and its
+**The useful conclusion.** PRQL validates the syntax shutup picked, and its
 one structural limit is precisely the gap novadb can fill: novadb owns its
 engine, so its pipeline can carry `walk` and document stages that a
 SQL-targeting compiler cannot express at all.
@@ -139,7 +139,7 @@ already paid it.
 
 Stripped of syntax, the same defects recur:
 
-| # | Failure | Who | What nova must do |
+| # | Failure | Who | What shutup must do |
 |---|---|---|---|
 | 1 | Reading order ≠ execution order | SQL, SurrealQL | Pipeline. Already decided. |
 | 2 | No composition | SQL, Mongo | **Open.** Needs an answer: functions, named pipelines, or nothing. |
@@ -150,12 +150,12 @@ Stripped of syntax, the same defects recur:
 Failure 3 is the one worth dwelling on, because it is the most seductive.
 Cypher's implicit grouping and SQL's `NULL` propagation were both added to
 make the common case shorter. Both work until the moment they produce a
-wrong answer with no error. Every time nova is tempted to infer something,
+wrong answer with no error. Every time shutup is tempted to infer something,
 that is the precedent.
 
 Failure 4 is the one that kills projects quietly. SurrealQL and EdgeQL are
 not badly designed — they are *large*, and size is what makes a language
-hard, not syntax. The discipline nova needs is not a better grammar, it is
+hard, not syntax. The discipline shutup needs is not a better grammar, it is
 a shorter one.
 
 ---

@@ -1,4 +1,4 @@
-//! The shape of a parsed nova program.
+//! The shape of a parsed shutup program.
 //!
 //! Nothing here resolves anything. A name is a name: whether it turns out to
 //! be a collection, a piece defined with `define … as`, or nothing at all is
@@ -201,7 +201,7 @@ pub enum Expr {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Literal {
-    /// Kept as a JSON number, which is what the engine stores. nova has one
+    /// Kept as a JSON number, which is what the engine stores. shutup has one
     /// `number` type for the same reason.
     Number(Number),
     String(String),

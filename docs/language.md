@@ -1,4 +1,4 @@
-# nova
+# shutup
 
 Query language for novadb. Pipeline steps, Python expressions.
 

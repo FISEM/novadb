@@ -1,4 +1,4 @@
-//! What nova's parser accepts, and what it refuses.
+//! What shutup's parser accepts, and what it refuses.
 
 use lang::*;
 

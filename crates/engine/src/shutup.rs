@@ -1,4 +1,4 @@
-//! Running nova pipelines.
+//! Running shutup pipelines.
 //!
 //! A pipeline is a fold: each step takes the records the step above produced
 //! and hands records to the step below. The value semantics — truthiness,
@@ -654,7 +654,7 @@ fn compare(op: CompareOp, left: &Value, right: &Value) -> bool {
     }
 }
 
-/// Arithmetic. Whole numbers stay whole, because nova has one `number` type
+/// Arithmetic. Whole numbers stay whole, because shutup has one `number` type
 /// and turning 26 into 26.0 would be the language inventing a distinction it
 /// says it does not have.
 fn arithmetic(op: BinOp, left: &Value, right: &Value) -> Result<Value> {

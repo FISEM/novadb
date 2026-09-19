@@ -1,5 +1,5 @@
 mod exec;
-mod nova;
+mod shutup;
 mod value;
 
 use std::path::Path;
@@ -16,7 +16,7 @@ pub enum EngineError {
     #[error("parse error: {0}")]
     Parse(#[from] sql::ParseError),
     #[error("{0}")]
-    Nova(#[from] lang::ParseError),
+    Shutup(#[from] lang::ParseError),
     #[error(transparent)]
     Storage(#[from] storage::StorageError),
     #[error("unknown table '{0}'")]
@@ -63,12 +63,12 @@ impl Database {
         Ok(self.store.list_tables()?)
     }
 
-    /// Runs nova source: novadb's own query language.
+    /// Runs shutup source: novadb's own query language.
     pub fn run(&self, source: &str) -> Result<Vec<ExecResult>> {
         let statements = lang::parse(source)?;
         let mut results = Vec::with_capacity(statements.len());
         for stmt in &statements {
-            results.push(nova::run_statement(&self.store, stmt)?);
+            results.push(shutup::run_statement(&self.store, stmt)?);
         }
         Ok(results)
     }

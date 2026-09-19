@@ -1,4 +1,4 @@
-//! nova — novadb's query language.
+//! shutup — novadb's query language.
 //!
 //! This crate is at the Types step: the shapes and the signatures are fixed,
 //! and nothing is implemented. See `docs/language.md` for the reference and
@@ -30,7 +30,7 @@ pub struct ParseError {
     pub help: Option<String>,
 }
 
-/// Reads nova source into statements.
+/// Reads shutup source into statements.
 ///
 /// Statements are separated by newlines or `;`. Empty input is no statements,
 /// not an error.
