@@ -23,7 +23,7 @@ pub(crate) fn run_statement(store: &storage::Store, stmt: &Statement) -> Result<
             let existed = store.drop_table(name, *if_exists)?;
             Ok(ExecResult::DroppedTable { table: name.clone(), existed })
         }
-        other => Err(EngineError::Unsupported(format!(
+        other => Err(EngineError::Refused(format!(
             "{} is not running yet",
             statement_name(other)
         ))),
@@ -142,7 +142,7 @@ fn run_query(store: &storage::Store, pipeline: &Pipeline) -> Result<ExecResult> 
 }
 
 fn write_needs_records() -> EngineError {
-    EngineError::Unsupported(
+    EngineError::Refused(
         "'set' and 'delete' change records in a collection, so the pipeline has to start with one"
             .to_string(),
     )
@@ -158,7 +158,7 @@ fn own_record(row: &Row, collection: &str) -> Result<(u64, Map<String, Value>)> 
     let id = row.get(None, "id").as_u64();
     match (is_own, id) {
         (true, Some(id)) => Ok((id, row.sources[0].1.clone())),
-        _ => Err(EngineError::Unsupported(
+        _ => Err(EngineError::Refused(
             "these are not the collection's own records any more — a 'show' or a 'join' above \
              made new ones, and there is nothing in storage they stand for"
                 .to_string(),
@@ -172,7 +172,7 @@ fn run_pipeline(store: &storage::Store, pipeline: &Pipeline) -> Result<Vec<Map<S
 
 fn run_rows(store: &storage::Store, pipeline: &Pipeline) -> Result<Vec<Row>> {
     let source = pipeline.source.as_ref().ok_or_else(|| {
-        EngineError::Unsupported(
+        EngineError::Refused(
             "this pipeline starts with a step, so it needs records piped into it".to_string(),
         )
     })?;
@@ -202,7 +202,7 @@ fn run_rows(store: &storage::Store, pipeline: &Pipeline) -> Result<Vec<Row>> {
 
     match stream {
         Stream::Records(rows) => Ok(rows),
-        Stream::Groups(_) => Err(EngineError::Unsupported(
+        Stream::Groups(_) => Err(EngineError::Refused(
             "this pipeline ends on a 'group by', which makes groups rather than records"
                 .to_string(),
         )),
@@ -240,7 +240,7 @@ fn apply(
             return Ok(Stream::Records(out));
         }
         (Stream::Groups(_), _) => {
-            return Err(EngineError::Unsupported(
+            return Err(EngineError::Refused(
                 "a 'group by' makes groups, so the next step has to be a 'show'".to_string(),
             ))
         }
@@ -356,7 +356,7 @@ fn apply(
         Step::Follow(follow) => follow_links(store, collection, &rows, follow)?,
 
         other => {
-            return Err(EngineError::Unsupported(format!(
+            return Err(EngineError::Refused(format!(
                 "'{}' is not running yet",
                 step_name(other)
             )))
@@ -433,7 +433,7 @@ fn follow_links(
     follow: &lang::Follow,
 ) -> Result<Vec<Row>> {
     let edges = read(store, "edges").map_err(|e| match e {
-        EngineError::UnknownTable(_) => EngineError::Unsupported(
+        EngineError::UnknownTable(_) => EngineError::Refused(
             "following a link needs a collection called 'edges', holding from_id, to_id and label"
                 .to_string(),
         ),
@@ -527,7 +527,7 @@ fn check_fields(step: &Step, known: &[String]) -> Result<()> {
     for name in wanted {
         if !known.iter().any(|k| *k == name) {
             let kept = known.join(", ");
-            return Err(EngineError::Unsupported(format!(
+            return Err(EngineError::Refused(format!(
                 "'{name}' was dropped by an earlier 'show', which kept only {kept}. \
                  Move this step above the show, or add {name} to it."
             )));
@@ -855,7 +855,7 @@ fn counting(scope: Scope<'_>, name: &str, args: &[Expr]) -> Result<Option<Value>
     }
 
     let argument = args.first().ok_or_else(|| {
-        EngineError::Unsupported(format!("'{name}' needs a field to work on, like '{name}(age)'"))
+        EngineError::Refused(format!("'{name}' needs a field to work on, like '{name}(age)'"))
     })?;
 
     let mut values = Vec::with_capacity(rows.len());
@@ -916,7 +916,7 @@ fn call(scope: Scope<'_>, name: &str, args: &[Expr], values: &[Value]) -> Result
             other => other.to_string(),
         }),
         _ => {
-            return Err(EngineError::Unsupported(format!(
+            return Err(EngineError::Refused(format!(
                 "there is no '{name}' to call here"
             )))
         }
@@ -956,7 +956,7 @@ fn method(target: &Value, name: &str, args: &[Value]) -> Result<Value> {
         ("startswith", Some(part)) => Value::Bool(text.starts_with(part)),
         ("endswith", Some(part)) => Value::Bool(text.ends_with(part)),
         _ => {
-            return Err(EngineError::Unsupported(format!(
+            return Err(EngineError::Refused(format!(
                 "there is no '{name}' to call on this"
             )))
         }

@@ -551,3 +551,45 @@ fn the_parser_does_not_panic_on_junk() {
         let _ = parse(junk);
     }
 }
+
+// --- Statements that end on a block ----------------------------------------
+//
+// The newline that separated two statements is gone once a block has closed,
+// so these are the shapes a real script is made of, and the shapes a parser
+// tested only on one-liners gets wrong.
+
+#[test]
+fn two_indented_statements_can_follow_each_other() {
+    assert_eq!(stmts("define person\n    id: number key\n\ndefine pet\n    id: number key\n").len(), 2);
+}
+
+#[test]
+fn an_indented_statement_can_be_followed_by_a_one_line_one() {
+    assert_eq!(stmts("define person\n    id: number key\n\nadd person { id: 1 }\n").len(), 2);
+}
+
+#[test]
+fn an_indented_pipeline_can_be_followed_by_another_statement() {
+    assert_eq!(stmts("person\n    where age > 30\n\nsession\n").len(), 2);
+}
+
+#[test]
+fn a_whole_script_of_mixed_shapes_parses() {
+    let script = "\
+define person
+    id: number key
+    name: string
+
+define pet
+    id: number key
+    owner_id: number
+
+add person { id: 1, name: \"alice\" }
+add pet { id: 1, owner_id: 1 }
+
+person
+    join pet on pet.owner_id == person.id
+    show person.name, pet.id
+";
+    assert_eq!(stmts(script).len(), 5);
+}

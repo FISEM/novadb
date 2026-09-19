@@ -25,6 +25,10 @@ pub enum EngineError {
     ColumnCountMismatch(String),
     #[error("unsupported: {0}")]
     Unsupported(String),
+    /// A query the engine understood and would not run, explained in full.
+    /// Printed as written: the message is the whole error.
+    #[error("{0}")]
+    Refused(String),
 }
 
 pub type Result<T> = std::result::Result<T, EngineError>;

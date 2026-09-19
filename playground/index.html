@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ctext y=%2713%27 font-size=%2713%27 font-family=%27monospace%27%3E%3E%3C/text%3E%3C/svg%3E">
+<title>shutup — try it</title>
+<meta name="description" content="shutup is novadb's query language. Everything is a stream of records. Runs entirely in your browser.">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfbfa;
+    --panel: #ffffff;
+    --ink: #1a1a19;
+    --soft: #6b6b68;
+    --line: #e4e4e1;
+    --accent: #1f6f5c;
+    --accent-soft: #e6f2ee;
+    --bad: #a33a2a;
+    --bad-soft: #fbeae7;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151614;
+      --panel: #1d1f1c;
+      --ink: #eceae4;
+      --soft: #9b9b94;
+      --line: #2e312d;
+      --accent: #6cc0a4;
+      --accent-soft: #1d2f29;
+      --bad: #e58b78;
+      --bad-soft: #33211d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #151614; --panel: #1d1f1c; --ink: #eceae4; --soft: #9b9b94;
+    --line: #2e312d; --accent: #6cc0a4; --accent-soft: #1d2f29;
+    --bad: #e58b78; --bad-soft: #33211d;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 15px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+
+  header {
+    padding: 28px 16px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 {
+    margin: 0; font-size: 30px; letter-spacing: -0.02em; font-weight: 640;
+    font-family: var(--mono);
+  }
+  .tagline { margin: 6px 0 0; color: var(--soft); max-width: 62ch; }
+  .tagline strong { color: var(--ink); font-weight: 600; }
+
+  main {
+    max-width: 1180px; margin: 0 auto; padding: 20px 16px 64px;
+    display: grid; gap: 16px; grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; overflow: hidden;
+  }
+  .panel > header {
+    padding: 9px 14px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em;
+    color: var(--soft); font-weight: 620;
+  }
+
+  #examples { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 14px 0; }
+  .chip {
+    font: inherit; font-size: 12.5px; cursor: pointer;
+    background: transparent; color: var(--soft);
+    border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px;
+  }
+  .chip:hover { color: var(--ink); border-color: var(--soft); }
+  .chip[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+
+  textarea {
+    width: 100%; border: 0; resize: vertical; outline: none;
+    background: transparent; color: inherit;
+    font-family: var(--mono); font-size: 13.5px; line-height: 1.65;
+    padding: 12px 14px; min-height: 260px; tab-size: 4;
+  }
+  .bar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; border-top: 1px solid var(--line);
+  }
+  button.run {
+    font: inherit; font-weight: 580; cursor: pointer;
+    background: var(--accent); color: var(--bg);
+    border: 0; border-radius: 7px; padding: 7px 16px;
+  }
+  button.run:disabled { opacity: 0.5; cursor: default; }
+  .hint { color: var(--soft); font-size: 12.5px; }
+  kbd {
+    font-family: var(--mono); font-size: 11.5px;
+    border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
+  }
+
+  #out { padding: 4px 0 8px; min-height: 260px; }
+  .result { padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .result:last-child { border-bottom: 0; }
+  .note { color: var(--soft); font-size: 13px; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td {
+    text-align: left; padding: 5px 10px 5px 0;
+    border-bottom: 1px solid var(--line); vertical-align: top;
+    font-family: var(--mono); white-space: pre-wrap; word-break: break-word;
+  }
+  th { color: var(--soft); font-weight: 600; font-size: 11px;
+       text-transform: uppercase; letter-spacing: 0.07em; white-space: nowrap; }
+  /* Columns take the width of what is in them; the last one absorbs the rest. */
+  th:not(:last-child), td:not(:last-child) { width: 1%; white-space: nowrap; padding-right: 22px; }
+  th:last-child, td:last-child { width: 100%; }
+  td.empty { color: var(--soft); font-style: italic; }
+  .scroll { overflow-x: auto; }
+
+  .error {
+    margin: 10px 14px; padding: 11px 13px;
+    background: var(--bad-soft); border-left: 3px solid var(--bad);
+    border-radius: 0 7px 7px 0;
+  }
+  .error pre {
+    margin: 0 0 8px; font-family: var(--mono); font-size: 12.5px;
+    line-height: 1.5; white-space: pre; overflow-x: auto; color: var(--ink);
+  }
+  .error .msg { color: var(--bad); font-weight: 570; }
+  .error .fix { color: var(--soft); font-size: 13px; margin-top: 4px; }
+
+  footer {
+    max-width: 1180px; margin: 0 auto; padding: 0 16px 48px;
+    color: var(--soft); font-size: 13px;
+  }
+  footer code { font-family: var(--mono); font-size: 12.5px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <h1>shutup</h1>
+    <p class="tagline">
+      novadb's query language. <strong>Everything is a stream of records</strong> —
+      each step takes what the step above produced and passes records down.
+      Relational, document and graph, one pipeline. This page runs the real
+      engine, compiled to WebAssembly: nothing leaves your browser.
+    </p>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <header>
+      <span class="label">Query</span>
+      <span class="hint" id="status">starting…</span>
+    </header>
+    <div id="examples"></div>
+    <textarea id="editor" spellcheck="false" autocomplete="off"></textarea>
+    <div class="bar">
+      <button class="run" id="run" disabled>Run</button>
+      <span class="hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
+      <span class="hint" id="collections" style="margin-left:auto"></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <header><span class="label">Result</span></header>
+    <div id="out"><p class="result note">Pick an example, or write your own.</p></div>
+  </section>
+</main>
+
+<footer class="wrap">
+  Every page load gets its own database, seeded with a few people, their pets
+  and who knows whom. Reload to start over.
+  Reference: <code>docs/language.md</code>.
+</footer>
+
+<script type="module">
+import init, { NovaDb } from "./pkg/novadb_wasm.js";
+
+const editor = document.getElementById("editor");
+const out = document.getElementById("out");
+const runButton = document.getElementById("run");
+const status = document.getElementById("status");
+const collections = document.getElementById("collections");
+const chips = document.getElementById("examples");
+
+const SEED = `
+define person
+    id: number key
+    name: string
+    age: number
+    dept: string
+
+define pet
+    id: number key
+    owner_id: number
+    name: string
+    species: string
+
+define edges
+    id: number key
+    from_id: number
+    to_id: number
+    label: string
+
+add person { id: 1, name: "alice", age: 30, dept: "eng" }
+add person { id: 2, name: "bob", age: 25, dept: "eng" }
+add person { id: 3, name: "carol", age: 35, dept: "sales" }
+add person { id: 4, name: "dave", age: 41, dept: "sales" }
+
+add pet { id: 1, owner_id: 1, name: "rex", species: "dog" }
+add pet { id: 2, owner_id: 1, name: "mia", species: "cat" }
+add pet { id: 3, owner_id: 2, name: "kit", species: "cat" }
+add pet { id: 4, owner_id: 3, name: "sam", species: "bird" }
+
+add edges { id: 1, from_id: 1, to_id: 2, label: "knows" }
+add edges { id: 2, from_id: 2, to_id: 3, label: "knows" }
+add edges { id: 3, from_id: 3, to_id: 4, label: "knows" }
+add edges { id: 4, from_id: 1, to_id: 3, label: "follows" }
+`;
+
+const EXAMPLES = [
+  ["Read", `person
+    where age > 28
+    sort age down
+    show name, age`],
+
+  ["Rename and compute", `person
+    show who: name, grown_up: age >= 30, shout: name.upper()`],
+
+  ["Count by group", `person
+    group by dept
+    show dept, how_many: count(), average_age: average(age)`],
+
+  ["Join", `person
+    join pet on pet.owner_id == person.id
+    sort pet.name
+    show owner: person.name, animal: pet.name`],
+
+  ["Follow a link", `person
+    where name == "alice"
+    keep following knows
+    sort age
+    show name, age`],
+
+  ["Documents", `define session
+
+add session { device: "mobile", cart: 3 }
+add session { note: "a different shape entirely" }
+
+session`],
+
+  ["Preview, then delete", `person
+    where age < 28
+
+# Add "delete" as the last step and it removes
+# exactly the records you just looked at.`],
+
+  ["When it goes wrong", `person
+    show name
+    sort age`],
+
+  ["A typo", `person | take`],
+];
+
+// --- Editing ---------------------------------------------------------------
+// Indentation carries meaning here, so the editor keeps it rather than
+// fighting it: Tab inserts spaces, and Enter holds the current depth.
+editor.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    run();
+    return;
+  }
+  if (event.key === "Tab") {
+    event.preventDefault();
+    insert("    ");
+    return;
+  }
+  if (event.key === "Enter") {
+    const upTo = editor.value.slice(0, editor.selectionStart);
+    const line = upTo.slice(upTo.lastIndexOf("\n") + 1);
+    const indent = line.match(/^[ \t]*/)[0];
+    if (indent) {
+      event.preventDefault();
+      insert("\n" + indent);
+    }
+  }
+});
+
+function insert(text) {
+  const { selectionStart: from, selectionEnd: to } = editor;
+  editor.value = editor.value.slice(0, from) + text + editor.value.slice(to);
+  editor.selectionStart = editor.selectionEnd = from + text.length;
+}
+
+// --- Showing results -------------------------------------------------------
+
+function show(kind, body) {
+  const box = document.createElement("div");
+  box.className = kind;
+  box.append(body);
+  out.append(box);
+}
+
+function text(tag, content, className) {
+  const node = document.createElement(tag);
+  node.textContent = content;
+  if (className) node.className = className;
+  return node;
+}
+
+function asTable(rows) {
+  if (!rows.length) return text("p", "No records.", "note");
+  const columns = [];
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (!columns.includes(key)) columns.push(key);
+    }
+  }
+  const table = document.createElement("table");
+  const head = table.createTHead().insertRow();
+  for (const column of columns) head.append(text("th", column));
+  const body = table.createTBody();
+  for (const row of rows) {
+    const line = body.insertRow();
+    for (const column of columns) {
+      const cell = line.insertCell();
+      const value = row[column];
+      if (value === undefined || value === null) {
+        cell.textContent = value === undefined ? "—" : "None";
+        cell.className = "empty";
+      } else {
+        cell.textContent = typeof value === "object"
+          ? JSON.stringify(value)
+          : String(value);
+      }
+    }
+  }
+  const scroll = document.createElement("div");
+  scroll.className = "scroll";
+  scroll.append(table);
+  return scroll;
+}
+
+function describe(result) {
+  switch (result.type) {
+    case "select": return asTable(result.rows);
+    case "inserted": return text("p", `Added ${result.ids.length} record${result.ids.length === 1 ? "" : "s"}.`, "note");
+    case "updated": return text("p", `Changed ${result.count} record${result.count === 1 ? "" : "s"}.`, "note");
+    case "deleted": return text("p", `Removed ${result.count} record${result.count === 1 ? "" : "s"}.`, "note");
+    case "created_table": return text("p", result.created ? `Defined ${result.table}.` : `${result.table} was already there.`, "note");
+    case "dropped_table": return text("p", result.existed ? `Removed ${result.table}.` : `${result.table} was not there.`, "note");
+    default: return text("pre", JSON.stringify(result, null, 2));
+  }
+}
+
+/// Shows an error the way the language promises: the line it is on, a caret
+/// under the exact text, the sentence, and the fix.
+function showError(entry, source) {
+  const box = document.createElement("div");
+  box.className = "error";
+
+  if (Number.isInteger(entry.start)) {
+    const before = source.slice(0, entry.start);
+    const lineStart = before.lastIndexOf("\n") + 1;
+    const lineEndAt = source.indexOf("\n", entry.start);
+    const lineEnd = lineEndAt === -1 ? source.length : lineEndAt;
+    const line = source.slice(lineStart, lineEnd);
+    const column = entry.start - lineStart;
+    const width = Math.max(1, Math.min(entry.end - entry.start, line.length - column));
+    box.append(text("pre", line + "\n" + " ".repeat(column) + "^".repeat(width)));
+  }
+
+  box.append(text("p", entry.detail, "msg"));
+  if (entry.help) box.append(text("p", entry.help, "fix"));
+  out.append(box);
+}
+
+// --- Running ---------------------------------------------------------------
+
+let db = null;
+
+function run() {
+  if (!db) return;
+  const source = editor.value;
+  out.replaceChildren();
+
+  let results;
+  try {
+    results = JSON.parse(db.run(source));
+  } catch (problem) {
+    show("result", text("p", String(problem), "msg"));
+    return;
+  }
+
+  for (const entry of results) {
+    if (entry.status === "ERR") showError(entry, source);
+    else show("result", describe(entry.result));
+  }
+  refreshCollections();
+}
+
+function refreshCollections() {
+  try {
+    const names = JSON.parse(db.collections());
+    collections.textContent = names.length ? names.join(" · ") : "no collections";
+  } catch {
+    collections.textContent = "";
+  }
+}
+
+// --- Starting up -----------------------------------------------------------
+
+EXAMPLES.forEach(([name, source], index) => {
+  const chip = document.createElement("button");
+  chip.className = "chip";
+  chip.type = "button";
+  chip.textContent = name;
+  chip.setAttribute("aria-pressed", index === 0 ? "true" : "false");
+  chip.addEventListener("click", () => {
+    for (const other of chips.children) other.setAttribute("aria-pressed", "false");
+    chip.setAttribute("aria-pressed", "true");
+    editor.value = source;
+    run();
+  });
+  chips.append(chip);
+});
+
+editor.value = EXAMPLES[0][1];
+
+init().then(() => {
+  db = new NovaDb();
+  db.run(SEED);
+  runButton.disabled = false;
+  status.textContent = "running in your browser";
+  refreshCollections();
+  run();
+}).catch((problem) => {
+  status.textContent = "failed to start";
+  out.replaceChildren();
+  show("result", text("p", String(problem), "msg"));
+});
+
+runButton.addEventListener("click", run);
+</script>
+</body>
+</html>

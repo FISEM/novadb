@@ -111,6 +111,12 @@ impl Parser {
                 return Ok(out);
             }
             out.push(self.statement()?);
+            // A block closing ends the statement that opened it: the newline
+            // before the Dedent is gone by then, and demanding another one
+            // would refuse two indented statements in a row.
+            if self.just_closed_a_block() {
+                continue;
+            }
             match self.peek() {
                 Tok::Newline | Tok::Semicolon | Tok::Dedent | Tok::End => {}
                 _ => {
@@ -121,6 +127,11 @@ impl Parser {
                 }
             }
         }
+    }
+
+    /// Whether the token just consumed was the end of an indented block.
+    fn just_closed_a_block(&self) -> bool {
+        self.at > 0 && self.toks[self.at - 1].tok == Tok::Dedent
     }
 
     fn statement(&mut self) -> Result<Statement, ParseError> {
