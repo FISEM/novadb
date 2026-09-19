@@ -416,6 +416,38 @@ That covers nearly everything a parameter would have been for. Parameters
 are the obvious next feature and the obvious way to double the size of this
 language, so they wait until something real cannot be written without them.
 
+#### Where adding a step stops working
+
+Asked publicly what that "something real" would be, and answered. Adding a
+step is enough while the *shape* of the query is fixed and only values
+change. It stops at two places, and both are places a linear pipeline cannot
+go:
+
+- **Branching.** "Filter by A if X, otherwise by B" is not a step you can
+  append. A pipeline is a line, and that is a fork.
+- **A field named at run time.** `show <whatever>` needs the name to come
+  from somewhere, and nothing in the language can supply one.
+
+Neither is in v0, so neither forces the decision yet. When one does, the
+answer is a named piece that takes an argument — a function, whatever it
+gets called:
+
+```
+define older_than(n) as
+    person
+        where age > n
+
+older_than(30) | show name
+```
+
+The alternative that gets suggested — session variables, `$min_age = 30`
+declared once and read by later queries — is worse here, and for this
+language's own stated reason. You would read `where age > $min_age` and not
+be able to tell what it does without looking somewhere else. That is action
+at a distance, which is the thing section 5 refuses when Cypher does it with
+grouping keys. A sigil would also be the only symbol in the language that
+has to be taught.
+
 ### What a name is, exactly
 
 - **It is re-read, never stored.** `adults` runs its pipeline every time,
