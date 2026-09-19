@@ -1,19 +1,24 @@
 # nova — the query language
 
 > **Status: design draft.** Nothing here is implemented. The name `nova` is
-> provisional. This document is the contract the implementation will be built
-> against, and the place to argue about the language while arguing is still
-> cheap.
+> provisional. This is the contract the implementation will be built against,
+> and the place to argue about the language while arguing is still cheap.
 
 nova replaces SQL in novadb.
 
-It has one design goal, and every decision below is answerable to it:
+It has one design goal, and every decision below answers to it:
 
-> **A sixteen-year-old who has seen a little Python should be able to read a
-> nova query and say what it does, without being taught the language first.**
+> **A sixteen-year-old who has seen a little Python should read a nova query
+> and say what it does, without being taught the language first.**
 
-That goal rules things out. Where a shorter, cleverer form would need
-explaining, nova takes the longer form that does not.
+And one rule that enforces it:
+
+> **Plain American English only. Any word a reader cannot recognize without
+> prior knowledge is rejected** — no abbreviations, no database jargon, no
+> symbols that need explaining.
+
+That rule costs keystrokes and buys readers. Where a shorter, cleverer form
+would need explaining, nova takes the longer form that does not.
 
 ---
 
@@ -27,15 +32,15 @@ person
     where age > 30
     sort age
     take 10
-    select name, age
+    show name, age
 ```
 
-All the people · the ones over thirty · oldest last · the first ten · their
-name and age.
+All the people · the ones over thirty · youngest first · the first ten ·
+their name and age.
 
-Nobody has to explain that. There is no clause order to memorise, nothing
-that is written first but runs last. You read it top to bottom and that is
-the order it happens.
+Nobody has to explain that. There is no clause order to memorize, nothing
+written first that runs last. You read it top to bottom and that is the
+order it happens.
 
 A **record** is a document: field names to values. A collection is a source
 of records. That is the whole data model — a typed table is just a
@@ -65,43 +70,83 @@ The destructive query is the safe query plus one line. In SQL you rewrite
 **Indentation means "this belongs to the line above."**
 
 That is the only structural rule in the language, and it is the same rule
-everywhere: pipeline steps, record bodies, schema bodies.
+everywhere: pipeline steps, record bodies, shape bodies.
 
 ```
-person                     define person              insert person
-    where age > 30             id: int key                id: 1
-    select name                name: str                  name: "alice"
+person                     define person              add person
+    where age > 30             id: number key             id: 1
+    show name                  name: text                 name: "alice"
 ```
 
 **Anything indented can be written on one line instead.** Steps separate
 with `|`, fields separate with `,` inside `{ }`:
 
 ```
-person | where age > 30 | select name
-define person { id: int key, name: str }
-insert person { id: 1, name: "alice" }
+person | where age > 30 | show name
+define person { id: number key, name: text }
+add person { id: 1, name: "alice" }
 ```
 
 Same grammar, not a second language. The one-line form exists because a
-query has to survive being typed into a REPL, pasted into a `curl` body, or
-embedded in a string in Python or JavaScript — places where a leading
-indent is either impossible or already spoken for by the host language.
+query has to survive being typed into a prompt, pasted into a `curl` body,
+or written inside a string in Python or JavaScript — places where a leading
+indent is impossible or already means something to the host language.
 
 Indent with spaces or a tab, consistently within a query. A pipeline is flat
-by construction, so in practice there is exactly one level of indentation
+by construction, so in practice there is exactly one level of indentation,
 and none of Python's deep-nesting pain applies.
 
 ---
 
-## 3. Reading data
+## 3. The words
 
-A bare collection name is already a valid query: every record in it.
+The complete vocabulary. If a word here needs a glossary, it is the wrong
+word.
+
+| Step | Does |
+|---|---|
+| `where` | keeps the records that match |
+| `show` | keeps only these fields, renames them, computes new ones |
+| `sort` | puts them in order — `up` by default, `down` to reverse |
+| `take` | keeps the first few |
+| `skip` | drops the first few |
+| `unique` | drops repeats |
+| `join … on …` | pairs each record with matching records from elsewhere |
+| `group by` | splits the stream into groups |
+| `follow` | walks a link to other records |
+| `keep following` | walks that link as far as it goes |
+| `set` | changes fields |
+| `delete` | removes records |
+
+| Statement | Does |
+|---|---|
+| `add` | puts new records in |
+| `define` | states what shape a collection's records have |
+| `remove` | throws a whole collection away |
+
+| Counting | Does |
+|---|---|
+| `count()` | how many |
+| `total(x)` | all of them added up |
+| `average(x)` | the average |
+| `lowest(x)` / `highest(x)` | the smallest and largest |
+
+Words that were considered and rejected: `select` (does not say "only
+these fields"), `desc` and `avg` and `min` and `max` and `int` and `str`
+(abbreviations), `distinct` and `drop` and `insert` (database jargon),
+`*` for "as far as it goes" (a symbol needing a lesson).
+
+---
+
+## 4. Reading
+
+A bare collection name is already a query: every record in it.
 
 ```
 person
 ```
 
-### `where` — keep matching records
+### `where`
 
 ```
 person
@@ -110,142 +155,140 @@ person
 ```
 
 ```
-person | where 18 < age < 65                  # chained, as in Python
+person | where 18 < age < 65                    # chained, as in Python
 person | where device in ["mobile", "tablet"]
 person | where nickname is None
 ```
 
-### `select` — choose and rename fields
+### `show`
 
 ```
-person | select name
-person | select name, age
-person | select name, years: age                # rename
-person | select name, adult: age >= 18          # compute
+person | show name
+person | show name, age
+person | show name, years: age                  # rename
+person | show name, adult: age >= 18            # compute
 ```
 
-Without `select`, whole records pass through. `select` never has to come
-first, so a query is written in the order you think of it.
+Without `show`, whole records pass through. `show` never has to come first,
+so a query is written in the order you think of it.
 
 ### `sort`, `take`, `skip`
 
 ```
-person | sort age
-person | sort age desc
-person | sort dept, age desc                    # ties broken left to right
+person | sort age                               # youngest first
+person | sort age down                          # oldest first
+person | sort dept, age down                    # ties broken left to right
 person | sort age | take 10
 person | sort age | skip 10 | take 10           # page two
 ```
 
 `sort` sees records as they reach it, so it can sort on a field a later
-`select` drops. This is deliberate. It is exactly the bug that SQL's clause
+`show` drops. This is deliberate. It is exactly the bug SQL's clause
 ordering invites — and that novadb's own engine shipped with until it was
 found and fixed.
 
-### `distinct`
+### `unique`
 
 ```
-person | select dept | distinct
+person | show dept | unique
 ```
 
 ---
 
-## 4. Combining and grouping
+## 5. Combining and grouping
 
 ### `join`
 
 ```
 person
     join pet on pet.owner_id == person.id
-    select person.name, pet: pet.name
+    show person.name, pet: pet.name
 ```
 
 ```
 person
     join pet on pet.owner_id == person.id keep all
-    select person.name, pet: pet.name
+    show person.name, pet: pet.name
 ```
 
-`keep all` is the left join: people with no pet still come through, with
-`pet.*` reading as `None`. Without it they are dropped.
+`keep all` keeps people who have no pet, with `pet.*` reading as `None`.
+Without it, they are dropped.
 
 ### `group by`
 
-`group by` splits the stream into groups. The `select` after it sees each
-group as one record, and the counting functions fold it:
+`group by` splits the stream into groups. The `show` after it sees each
+group as one record, and the counting words fold it:
 
 ```
 pet
     group by species
-    select species, n: count()
+    show species, n: count()
 ```
 
 ```
 pet
     group by species
-    select species, oldest: max(age), average: avg(age)
+    show species, oldest: highest(age), usual: average(age)
     where n > 1
 ```
 
-Filtering groups is just `where` after the `select`. There is no `HAVING`
-to learn, because there is nothing left for it to do.
-
-Counting functions: `count()`, `sum(x)`, `avg(x)`, `min(x)`, `max(x)`.
+Filtering groups is just `where` after the `show`. There is nothing to learn
+called `HAVING`, because there is nothing left for it to do.
 
 **Nothing is inferred.** Cypher decides your grouping key by looking at
-which terms in the projection are not aggregates, so adding a field
-silently changes what the query means. In nova the grouping key is the
-thing written after `group by`, and nowhere else.
+which parts of the projection are not counting functions, so adding a field
+silently changes what the query means. In nova the grouping key is what is
+written after `group by`, and nowhere else.
 
 ---
 
-## 5. Following links
+## 6. Following links
 
-Edges live in an ordinary collection you control. `follow` walks them:
+Links live in an ordinary collection you control.
 
 ```
 person
     where id == 1
     follow knows
-    select name
+    show name
 ```
 
 ```
-person | where id == 1 | follow knows | follow knows | select name   # two hops
-person | where id == 1 | follow knows* | select name                 # any depth
-person | where id == 1 | follow back knows | select name             # incoming
+person | where id == 1 | follow knows | follow knows | show name
+person | where id == 1 | keep following knows | show name
+person | where id == 1 | follow knows backward | show name
 ```
 
-`follow knows*` goes breadth-first, visits each record once, and stops on
-cycles. `follow back` goes against the arrow — spelled as a word so nothing
-collides with a negative number.
+`follow knows` takes one step. `keep following knows` goes as far as the
+links go — breadth-first, each record visited once, stopping on loops.
+`backward` goes against the arrow.
 
-`follow` is a step like any other, so it composes with everything else:
+`follow` is a step like any other, so it composes:
 
 ```
 person
     where id == 1
-    follow knows*
+    keep following knows
     where age > 30
     sort name
-    select name
+    show name
 ```
 
 ---
 
-## 6. Writing data
+## 7. Writing
 
-### `insert`
+### `add`
 
 ```
-insert person
+add person
     id: 1
     name: "alice"
     age: 30
 ```
 
 ```
-insert person { id: 2, name: "bob" }
+add person { id: 2, name: "bob" }
 ```
 
 ### `set` and `delete` — last steps
@@ -254,42 +297,47 @@ insert person { id: 2, name: "bob" }
 person | where id == 1 | set age = 31
 person | where id == 1 | set age = age + 1, seen: True
 person | where age < 18 | delete
-person | delete                                  # every record, said plainly
+person | delete                                 # every record, said plainly
 ```
 
 A `set` or `delete` with no `where` above it is not a mistake the language
 hides. You wrote a pipeline over the whole collection, and it reads that
 way.
 
-### `define` — declaring shape
+### `define` — stating a shape
 
 ```
 define person
-    id: int key
-    name: str
-    age: int?
+    id: number key
+    name: text
+    age: number?
 ```
 
 ```
 define session          # no body: any shape, every record different
 ```
 
-Types: `int`, `float`, `str`, `bool`, `json`. A trailing `?` means the field
-may be missing or `None`. `key` marks the primary key.
+Types: `number`, `text`, `boolean`, `anything`. A trailing `?` means the
+field may be missing or `None`. `key` marks the field that identifies a
+record.
 
-A body is a claim about shape; no body is no claim. Document collections are
-not a special case, they are the absence of one.
+There is one `number`, not an integer and a float. The engine stores JSON
+numbers, where that distinction does not exist — so inventing it in the
+language would be a lie about what happens.
 
-### `drop`
+A body is a claim about shape; no body is no claim. Document collections
+are not a special case, they are the absence of one.
+
+### `remove`
 
 ```
-drop person
-drop person if exists
+remove person
+remove person if exists
 ```
 
 ---
 
-## 7. Expressions
+## 8. Expressions
 
 Python's, as far as they go.
 
@@ -317,12 +365,12 @@ keep a trap it has already named.
 
 ### Built-ins
 
-Python's names, not SQL's:
+Python's names:
 
 ```
 len(name)        name.upper()        name.lower()
 name.startswith("a")                 name.endswith("z")
-abs(n)           round(n)            int(x)     str(x)     float(x)
+abs(n)           round(n)            number(x)     text(x)
 ```
 
 There is no `COALESCE`, because `a or b` already returns the first thing
@@ -334,11 +382,11 @@ Python's, exactly: `None`, `False`, `0`, `""`, `[]` and `{}` are false,
 everything else is true.
 
 ```
-person | where nickname        # the ones with a non-empty nickname
+person | where nickname        # the ones with a nickname that isn't empty
 ```
 
-This is not a new rule to teach. novadb's engine already evaluates
-truthiness this way today.
+Not a new rule to teach: novadb's engine already evaluates truthiness this
+way today.
 
 ### `None`
 
@@ -347,13 +395,13 @@ first.
 
 nova has **no three-valued logic**. In SQL, `NULL = NULL` is neither true
 nor false, and `x NOT IN (…)` silently returns nothing when the list holds
-one `NULL`. That rule is the single hardest thing about SQL to hold in your
-head, it produces wrong answers rather than errors, and novadb's engine
-already declines to implement it.
+one `NULL`. That is the hardest rule in SQL to hold in your head, it
+produces wrong answers instead of errors, and novadb's engine already
+declines to implement it.
 
 ---
 
-## 8. Errors are part of the design
+## 9. Errors are part of the design
 
 For the sixteen-year-old, error messages matter more than syntax. A language
 with an ordinary grammar and excellent errors is easier than the reverse.
@@ -366,27 +414,27 @@ person has no field 'aeg'. Did you mean 'age'?
 ```
 
 ```
-person | select name | sort age
-                            ^^^
-'age' was dropped by 'select name' on the step above.
-Move 'sort age' before it, or add age to the select.
+person | show name | sort age
+                          ^^^
+'age' was dropped by 'show name' on the step above.
+Move 'sort age' before it, or add age to the show.
 ```
 
 ```
 person
     where age > 30
-   select name
+   show name
    ^
 This line is indented less than the one above it, but more than 'person'.
 Every step in a pipeline lines up at the same depth.
 ```
 
-Three rules: point at the exact token, say what is wrong in a full sentence,
-and name the fix.
+Three rules: point at the exact word, say what is wrong in a full sentence,
+name the fix.
 
 ---
 
-## 9. The sixteen-year-old test
+## 10. The sixteen-year-old test
 
 The bar this document is held to. If a query needs a paragraph of
 explanation, the design is wrong, not the reader.
@@ -396,49 +444,50 @@ explanation, the design is wrong, not the reader.
 
 person
     where name == "alice"
-    follow knows*
+    keep following knows
     where age > 30
-    sort age desc
-    select name, age
+    sort age down
+    show name, age
 ```
 
-Six lines, no punctuation to decode, no keyword that is not an ordinary
-English word. Read it aloud and it is a sentence.
+Six lines. No punctuation to decode, no word that is not ordinary English.
+Read it aloud and it is a sentence.
 
 ---
 
-## 10. Deliberately not here, yet
+## 11. Deliberately not here, yet
 
 Named so the absences are choices, not oversights.
 
-- **Composition.** No functions, no named pipelines, no reusable fragments.
+- **Composition.** No functions, no named pipelines, no reusable pieces.
   This is the largest open question in the design: it is SQL's worst
-  structural failure, PRQL's best idea, and nova currently has no answer.
-- **Subqueries and `let` bindings.** A pipeline branches only by joining.
-- **`insert` from a query.** `insert archive (session | where ts < 1000)`
-  is obviously useful, and is left out of v0 to keep `insert` one shape.
+  structural failure, PRQL's best idea, and nova has no answer.
+- **Queries inside queries.** A pipeline branches only by joining.
+- **`add` from a query.** `add archive (session | where ts < 1000)` is
+  obviously useful, left out of v0 to keep `add` one shape.
 - **Transactions.** Unchanged from today: none.
-- **Schema enforcement.** `define` states a shape; nothing rejects a record
+- **Shape enforcement.** `define` states a shape; nothing rejects a record
   that disagrees. Same as novadb today, same honest caveat.
 
 ---
 
-## 11. Open questions
+## 12. Open questions
 
 Decided one way here, and reasonably decidable the other.
 
-1. **`select` as a word.** Clear to anyone who has seen SQL, less obvious to
-   someone who has not. `show name, age` and `pick name, age` both read
-   better cold. Changing it costs nothing today and everything later.
-2. **`keep all` for left joins.** Reads well, but it is a two-word keyword
-   in a language that otherwise has none. `left join` is uglier and instantly
-   understood by anyone who has met SQL.
-3. **`follow back knows`.** Plain, but the word order is awkward.
-   Alternatives: `follow knows backwards`, or dropping incoming traversal
-   from v0 entirely.
-4. **Aggregates outside `group by`.** Is `pet | select n: count()` over the
-   whole collection allowed, or does counting always require a `group by`?
-5. **`sort` before `select`.** The spec says `sort` sees records before the
-   projection drops fields. The alternative is to reject it and make the
-   error teach the order. Section 8 shows the error either way.
+1. **`boolean`.** The one word in the language that fails its own rule — a
+   sixteen-year-old has not met it. Every replacement considered is worse:
+   `yesno`, `flag`, `truefalse`, `switch`. Left standing for want of a
+   better word, not because it passes.
+2. **`remove person` versus `person | delete`.** One throws away the
+   collection, the other empties it. They read alike and differ enormously.
+   Is `remove` distinct enough, or does this need a longer, uglier,
+   safer word?
+3. **`keep all` for left joins.** Plain English, but a two-word step in a
+   language that otherwise has none.
+4. **Counting outside `group by`.** Is `pet | show n: count()` over the
+   whole collection allowed, or does counting always need a `group by`?
+5. **`sort` before `show`.** The spec says `sort` sees records before the
+   projection drops fields. The alternative is to reject it and let the
+   error teach the order. Section 9 shows the error either way.
 6. **The name.** `nova` collides with the database it queries.
