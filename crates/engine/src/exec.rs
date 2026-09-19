@@ -89,22 +89,29 @@ impl<'a> ExecCtx<'a> {
             self.ctes.insert(cte.name.clone(), rows);
         }
 
-        let mut rows = self.eval_set_expr(&stmt.body)?;
-
-        if !stmt.order_by.is_empty() {
+        // ORDER BY may name a column the projection dropped (`SELECT name ...
+        // ORDER BY age`) or renamed (`SELECT name AS who ... ORDER BY name`),
+        // so it is resolved against the source row with the projected row
+        // layered on top: output aliases win, everything else still reaches
+        // the underlying columns. Sorting the projected rows alone silently
+        // returned them unsorted.
+        let mut rows = if stmt.order_by.is_empty() {
+            self.eval_set_expr(&stmt.body)?
+        } else if let SetExpr::Select(core) = &stmt.body {
+            sorted_projection(self.eval_select_core_rows(core)?, &stmt.order_by)
+        } else {
+            // A set operation exposes only its output columns, per SQL, so
+            // there is no source row to fall back to.
+            let mut rows = self.eval_set_expr(&stmt.body)?;
             rows.sort_by(|a, b| {
-                for item in &stmt.order_by {
-                    let va = eval_expr_on_map(a, &item.expr).unwrap_or(Value::Null);
-                    let vb = eval_expr_on_map(b, &item.expr).unwrap_or(Value::Null);
-                    let ord = compare_values(&va, &vb).unwrap_or(Ordering::Equal);
-                    let ord = if item.desc { ord.reverse() } else { ord };
-                    if ord != Ordering::Equal {
-                        return ord;
-                    }
-                }
-                Ordering::Equal
+                compare_by_order(
+                    &Row::single(String::new(), a.clone()),
+                    &Row::single(String::new(), b.clone()),
+                    &stmt.order_by,
+                )
             });
-        }
+            rows
+        };
 
         let offset = stmt.offset.unwrap_or(0).max(0) as usize;
         if offset > 0 {
@@ -169,6 +176,13 @@ impl<'a> ExecCtx<'a> {
     }
 
     fn eval_select_core(&mut self, core: &SelectCore) -> Result<Vec<Map<String, Value>>> {
+        Ok(self.eval_select_core_rows(core)?.into_iter().map(|(out, _)| out).collect())
+    }
+
+    /// Like `eval_select_core`, but pairs every projected row with the source
+    /// row it came from, so `ORDER BY` can still see columns the projection
+    /// dropped or renamed.
+    fn eval_select_core_rows(&mut self, core: &SelectCore) -> Result<Vec<(Map<String, Value>, Row)>> {
         let mut rows: Vec<Row> = match &core.from {
             None => vec![Row::empty()],
             Some(table_ref) => {
@@ -223,7 +237,7 @@ impl<'a> ExecCtx<'a> {
                         }
                     }
                 }
-                out.push(map);
+                out.push((map, group.first().cloned().unwrap_or_else(Row::empty)));
             }
             out
         } else {
@@ -243,13 +257,13 @@ impl<'a> ExecCtx<'a> {
                         }
                     }
                 }
-                out.push(map);
+                out.push((map, row.clone()));
             }
             out
         };
 
         if core.distinct {
-            dedup_keep_order(&mut out);
+            dedup_projected_keep_order(&mut out);
         }
 
         Ok(out)
@@ -436,6 +450,54 @@ fn dedup_keep_order(rows: &mut Vec<Map<String, Value>>) {
     });
 }
 
+/// DISTINCT over projected rows: compares the projected output only, since the
+/// source row rides along purely so ORDER BY can resolve against it afterwards.
+fn dedup_projected_keep_order(rows: &mut Vec<(Map<String, Value>, Row)>) {
+    let mut seen: Vec<Map<String, Value>> = Vec::new();
+    rows.retain(|(out, _)| {
+        if seen.iter().any(|s| s == out) {
+            false
+        } else {
+            seen.push(out.clone());
+            true
+        }
+    });
+}
+
+/// Compares two rows against an `ORDER BY` list, first key that differs wins.
+fn compare_by_order(a: &Row, b: &Row, order_by: &[OrderByItem]) -> Ordering {
+    for item in order_by {
+        let va = eval_expr(a, &item.expr).unwrap_or(Value::Null);
+        let vb = eval_expr(b, &item.expr).unwrap_or(Value::Null);
+        let ord = compare_values(&va, &vb).unwrap_or(Ordering::Equal);
+        let ord = if item.desc { ord.reverse() } else { ord };
+        if ord != Ordering::Equal {
+            return ord;
+        }
+    }
+    Ordering::Equal
+}
+
+/// Sorts projected rows using their source rows as a fallback scope, then
+/// drops the sources. The sort key view is built once per row, not per
+/// comparison.
+fn sorted_projection(
+    pairs: Vec<(Map<String, Value>, Row)>,
+    order_by: &[OrderByItem],
+) -> Vec<Map<String, Value>> {
+    let mut keyed: Vec<(Row, Map<String, Value>)> = pairs
+        .into_iter()
+        .map(|(out, mut source)| {
+            // Pushed last so an unqualified lookup finds it first: an output
+            // alias shadows a source column of the same name, per SQL.
+            source.sources.push((String::new(), out.clone()));
+            (source, out)
+        })
+        .collect();
+    keyed.sort_by(|(a, _), (b, _)| compare_by_order(a, b, order_by));
+    keyed.into_iter().map(|(_, out)| out).collect()
+}
+
 fn group_rows(rows: &[Row], group_by: &[Expr]) -> Result<Vec<Vec<Row>>> {
     if group_by.is_empty() {
         // No GROUP BY: the whole input is a single group (even if empty, so that
@@ -493,11 +555,6 @@ fn expr_display_name(expr: &Expr) -> String {
         Expr::CountStar => "count".to_string(),
         _ => "expr".to_string(),
     }
-}
-
-pub fn eval_expr_on_map(map: &Map<String, Value>, expr: &Expr) -> Result<Value> {
-    let row = Row::single(String::new(), map.clone());
-    eval_expr(&row, expr)
 }
 
 pub fn eval_expr(row: &Row, expr: &Expr) -> Result<Value> {
