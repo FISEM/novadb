@@ -16,15 +16,61 @@ use crate::{EngineError, ExecResult, Result};
 
 pub(crate) fn run_statement(store: &storage::Store, stmt: &Statement) -> Result<ExecResult> {
     match stmt {
-        Statement::Query(pipeline) => {
-            let rows = run_pipeline(store, pipeline)?;
-            Ok(ExecResult::Select { rows })
+        Statement::Query(pipeline) => run_query(store, pipeline),
+        Statement::DefineShape(shape) => define_shape(store, shape),
+        Statement::Add(add) => add_record(store, add),
+        Statement::Remove { name, if_exists, .. } => {
+            let existed = store.drop_table(name, *if_exists)?;
+            Ok(ExecResult::DroppedTable { table: name.clone(), existed })
         }
         other => Err(EngineError::Unsupported(format!(
             "{} is not running yet",
             statement_name(other)
         ))),
     }
+}
+
+fn define_shape(store: &storage::Store, shape: &lang::ShapeDef) -> Result<ExecResult> {
+    let columns = shape
+        .fields
+        .as_deref()
+        .unwrap_or(&[])
+        .iter()
+        .map(|field| storage::ColumnSchema {
+            name: field.name.clone(),
+            data_type: type_name(field.kind).to_string(),
+            primary_key: field.key,
+            // A shape is a claim, not a constraint, so this records what was
+            // written rather than anything the engine will enforce.
+            not_null: !field.optional,
+        })
+        .collect();
+    let schema = storage::TableSchema { name: shape.name.clone(), columns };
+    let created = store.create_table(&schema, false)?;
+    Ok(ExecResult::CreatedTable { table: shape.name.clone(), created })
+}
+
+fn type_name(kind: lang::TypeName) -> &'static str {
+    match kind {
+        lang::TypeName::Number => "number",
+        lang::TypeName::String => "string",
+        lang::TypeName::Boolean => "boolean",
+        lang::TypeName::Any => "any",
+    }
+}
+
+fn add_record(store: &storage::Store, add: &lang::AddStmt) -> Result<ExecResult> {
+    store
+        .get_schema(&add.collection.name)?
+        .ok_or_else(|| EngineError::UnknownTable(add.collection.name.clone()))?;
+
+    let nothing = Row::empty();
+    let mut record = Map::new();
+    for (name, value) in &add.record {
+        record.insert(name.clone(), eval(Scope::on(&nothing), value)?);
+    }
+    let id = store.insert_row(&add.collection.name, record)?;
+    Ok(ExecResult::Inserted { ids: vec![id] })
 }
 
 fn statement_name(stmt: &Statement) -> &'static str {
@@ -43,7 +89,88 @@ enum Stream {
     Groups(Vec<Vec<Row>>),
 }
 
+/// Runs a pipeline, which reads unless its last step writes.
+fn run_query(store: &storage::Store, pipeline: &Pipeline) -> Result<ExecResult> {
+    let write = match pipeline.steps.last() {
+        Some(Step::Set(_) | Step::Delete { .. }) => pipeline.steps.last(),
+        _ => None,
+    };
+    let reading = Pipeline {
+        source: pipeline.source.clone(),
+        steps: pipeline.steps[..pipeline.steps.len() - usize::from(write.is_some())].to_vec(),
+    };
+
+    let Some(last) = write else {
+        let rows = run_pipeline(store, &reading)?;
+        return Ok(ExecResult::Select { rows });
+    };
+
+    let collection = reading
+        .source
+        .as_ref()
+        .map(|s| s.name.clone())
+        .ok_or_else(|| write_needs_records())?;
+    let rows = run_rows(store, &reading)?;
+
+    match last {
+        Step::Set(assignments) => {
+            let mut count = 0u64;
+            for row in &rows {
+                let (id, mut record) = own_record(row, &collection)?;
+                for assignment in assignments {
+                    record.insert(
+                        assignment.field.clone(),
+                        eval(Scope::on(row), &assignment.value)?,
+                    );
+                }
+                store.update_row(&collection, id, record)?;
+                count += 1;
+            }
+            Ok(ExecResult::Updated { count })
+        }
+        Step::Delete { .. } => {
+            let mut count = 0u64;
+            for row in &rows {
+                let (id, _) = own_record(row, &collection)?;
+                store.delete_row(&collection, id)?;
+                count += 1;
+            }
+            Ok(ExecResult::Deleted { count })
+        }
+        _ => unreachable!("only set and delete get here"),
+    }
+}
+
+fn write_needs_records() -> EngineError {
+    EngineError::Unsupported(
+        "'set' and 'delete' change records in a collection, so the pipeline has to start with one"
+            .to_string(),
+    )
+}
+
+/// The id and contents of a record that is still the collection's own.
+///
+/// A `show` makes new records and a `join` makes pairs; neither is a thing in
+/// storage that can be changed, so writing after one is refused rather than
+/// guessed at.
+fn own_record(row: &Row, collection: &str) -> Result<(u64, Map<String, Value>)> {
+    let is_own = row.sources.len() == 1 && row.sources[0].0 == collection;
+    let id = row.get(None, "id").as_u64();
+    match (is_own, id) {
+        (true, Some(id)) => Ok((id, row.sources[0].1.clone())),
+        _ => Err(EngineError::Unsupported(
+            "these are not the collection's own records any more — a 'show' or a 'join' above \
+             made new ones, and there is nothing in storage they stand for"
+                .to_string(),
+        )),
+    }
+}
+
 fn run_pipeline(store: &storage::Store, pipeline: &Pipeline) -> Result<Vec<Map<String, Value>>> {
+    Ok(run_rows(store, pipeline)?.iter().map(Row::merged).collect())
+}
+
+fn run_rows(store: &storage::Store, pipeline: &Pipeline) -> Result<Vec<Row>> {
     let source = pipeline.source.as_ref().ok_or_else(|| {
         EngineError::Unsupported(
             "this pipeline starts with a step, so it needs records piped into it".to_string(),
@@ -73,15 +200,13 @@ fn run_pipeline(store: &storage::Store, pipeline: &Pipeline) -> Result<Vec<Map<S
         stream = apply(store, &collection, stream, step)?;
     }
 
-    Ok(match stream {
-        Stream::Records(rows) => rows.iter().map(Row::merged).collect(),
-        Stream::Groups(_) => {
-            return Err(EngineError::Unsupported(
-                "this pipeline ends on a 'group by', which produces groups rather than records"
-                    .to_string(),
-            ))
-        }
-    })
+    match stream {
+        Stream::Records(rows) => Ok(rows),
+        Stream::Groups(_) => Err(EngineError::Unsupported(
+            "this pipeline ends on a 'group by', which makes groups rather than records"
+                .to_string(),
+        )),
+    }
 }
 
 /// Every record in a collection, each carrying its id.
