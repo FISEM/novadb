@@ -1,11 +1,13 @@
 # novadb
 
+*Français · [English](README.en.md)*
+
 [![CI](https://github.com/FISEM/novadb/actions/workflows/ci.yml/badge.svg)](https://github.com/FISEM/novadb/actions/workflows/ci.yml)
 
-**Relational, document and graph — one engine, one pipeline.** Typed
-collections when you want structure, schemaless ones when you don't, and
-links you can walk. Not three query styles bolted together: the same steps,
-in the same order, over all three.
+**Relationnel, document et graphe — un seul moteur, un seul pipeline.** Des
+collections typées quand tu veux de la structure, sans schéma quand tu n'en
+veux pas, et des liens que tu peux suivre. Pas trois styles de requête
+boulonnés ensemble : les mêmes étapes, dans le même ordre, sur les trois.
 
 ```
 person
@@ -15,26 +17,28 @@ person
     show name, age
 ```
 
-Read it top to bottom and that is the order it happens. There is no clause
-order to memorize, nothing written first that runs last.
+Ça se lit de haut en bas, et c'est l'ordre dans lequel ça se passe. Aucun
+ordre de clauses à retenir, rien qui s'écrive en premier et s'exécute en
+dernier.
 
-**The language is called shutup.** Not an accident — it is what the query
-does to the ceremony. No `SELECT`, no `FROM`, no `GROUP BY … HAVING`: you
-name a collection and say what to do with it, one step per line.
+**Le langage s'appelle shutup.** Ce n'est pas un accident : c'est ce que la
+requête fait au cérémonial. Pas de `SELECT`, pas de `FROM`, pas de
+`GROUP BY … HAVING` — tu nommes une collection et tu dis quoi en faire, une
+étape par ligne.
 
-## Try it in your browser
+## L'essayer dans ton navigateur
 
-`playground/` is the real engine compiled to WebAssembly. No install, no
-server, nothing leaves the page.
+`playground/` contient le vrai moteur compilé en WebAssembly. Aucune
+installation, aucun serveur, rien ne quitte la page.
 
 ```sh
 cd playground && python3 -m http.server 8080
 ```
 
-It is a static directory, so any host will serve it. See
-[playground/README.md](playground/README.md).
+C'est un dossier statique, donc n'importe quel hébergeur fait l'affaire.
+Voir [playground/README.md](playground/README.md).
 
-## Run it as a server
+## Le lancer comme serveur
 
 ```sh
 cargo run -p server -- --data-file demo.redb --bind 127.0.0.1:8801
@@ -46,8 +50,8 @@ person
 '
 ```
 
-Or use the bundled prompt, which draws the records as a table and points at
-your mistakes:
+Ou utiliser le client fourni, qui affiche les enregistrements en tableau et
+pointe tes fautes du doigt :
 
 ```sh
 cargo run -p cli -- --url http://127.0.0.1:8801
@@ -60,75 +64,77 @@ shutup> person | take
 Write a whole number, like 'take 10'.
 ```
 
-## Try it in 30 seconds
+## L'essayer en 30 secondes
 
-Needs the Rust toolchain ([rustup.rs](https://rustup.rs) if you don't have
-it).
+Il te faut la chaîne d'outils Rust ([rustup.rs](https://rustup.rs) si tu ne
+l'as pas).
 
 ```sh
 git clone https://github.com/FISEM/novadb.git && cd novadb
 cargo test --workspace
 ```
 
-232 tests, no fixtures to set up. They are the fastest way to see what the
-language does — [`crates/engine/tests`](crates/engine/tests) reads like a
-tour.
+232 tests, aucune donnée de test à préparer. C'est le chemin le plus rapide
+pour voir ce que le langage sait faire :
+[`crates/engine/tests`](crates/engine/tests) se lit comme une visite guidée.
 
-## The whole language
+## Tout le langage
 
-Twelve steps, three statements, five counting words. If a word needs a
-glossary, it is the wrong word.
+Douze étapes, trois instructions, cinq mots pour compter. Si un mot a besoin
+d'un glossaire, c'est le mauvais mot.
 
-| Step | Does |
+| Étape | Fait quoi |
 |---|---|
-| `where` | keeps matching records |
-| `show` | keeps, renames, or computes fields |
-| `sort` | orders — `up` by default, `down` to reverse |
-| `take` / `skip` | keeps / drops the first few |
-| `unique` | drops repeats |
-| `join … on …` | pairs with records from elsewhere |
-| `group by` | splits the stream into groups |
-| `follow` / `keep following` | walks a link one step / all the way |
-| `set` / `delete` | changes / removes records |
+| `where` | garde les enregistrements qui correspondent |
+| `show` | garde, renomme ou calcule des champs |
+| `sort` | met en ordre — `up` par défaut, `down` pour inverser |
+| `take` / `skip` | garde / jette les premiers |
+| `unique` | supprime les doublons |
+| `join … on …` | apparie avec des enregistrements d'ailleurs |
+| `group by` | découpe le flux en groupes |
+| `follow` / `keep following` | suit un lien d'un pas / jusqu'au bout |
+| `set` / `delete` | modifie / supprime des enregistrements |
 
-`add` puts records in, `define` states a shape or names a pipeline, `remove`
-throws a collection away. Counting: `count()`, `total(x)`, `average(x)`,
-`lowest(x)`, `highest(x)`.
+`add` insère des enregistrements, `define` déclare une forme ou nomme un
+pipeline, `remove` jette une collection entière. Pour compter : `count()`,
+`total(x)`, `average(x)`, `lowest(x)`, `highest(x)`.
 
-Expressions are Python's — `and` / `or` / `not`, `in`, `is None`, chained
-comparisons like `18 < age < 65`, `len(name)`, `name.upper()` — and so is
-truthiness. `None` is an ordinary value: `None == None` is true, and there
-is no three-valued logic to hold in your head.
+Les expressions sont celles de Python — `and` / `or` / `not`, `in`,
+`is None`, les comparaisons chaînées comme `18 < age < 65`, `len(name)`,
+`name.upper()` — et la truthiness aussi. `None` est une valeur ordinaire :
+`None == None` est vrai, et il n'y a pas de logique ternaire à garder en
+tête.
 
-Full reference: [docs/language.md](docs/language.md).
+Référence complète : [docs/language.md](docs/language.md).
 
-### Three shapes, one pipeline
+### Trois formes, un pipeline
 
 ```
-# relational — typed collections
+# relationnel — collections typées
 define person { id: number key, name: string, age: number }
 person | where age > 30 | show name
 
-# document — no body, so every record may differ
+# document — pas de corps, donc chaque enregistrement peut différer
 define session
 add session { device: "mobile", cart: 3 }
-add session { note: "a different shape entirely" }
+add session { note: "une forme complètement différente" }
 
-# graph — links in an ordinary collection you can read
+# graphe — les liens vivent dans une collection ordinaire, lisible
 person | where name == "alice" | keep following knows | show name
 ```
 
-### Deleting is the same query, plus one line
+### Supprimer, c'est la même requête plus une ligne
 
 ```
-person | where age < 18            # look at them
-person | where age < 18 | delete   # remove exactly those
+person | where age < 18            # tu les regardes
+person | where age < 18 | delete   # tu supprimes exactement ceux-là
 ```
 
-In SQL you rewrite a `SELECT` into a `DELETE` and hope the `WHERE` survived
-the edit. Here the destructive query *is* the safe one with a step added.
+En SQL tu réécris un `SELECT` en `DELETE` et tu pries pour que le `WHERE`
+ait survécu à la modification. Ici la requête destructrice *est* la requête
+sûre, avec une étape en plus.
 
-### It refuses rather than answering wrongly
+### Il refuse plutôt que de répondre faux
 
 ```
 person | show name | sort age
@@ -136,62 +142,66 @@ person | show name | sort age
 Move this step above the show, or add age to it.
 ```
 
-Every error names the thing, says what is wrong in a full sentence, and
-names the fix. Silently returning nothing is the failure this language
-exists to avoid.
+Chaque erreur nomme la chose, explique en une phrase complète, et indique
+le correctif. Renvoyer une liste vide en silence, c'est précisément l'échec
+que ce langage existe pour éviter.
 
-## Why it is built this way
+## Pourquoi c'est fait comme ça
 
-**The pipeline, not the clause list.** SQL's worst property is that reading
-order is not execution order, which is why you cannot build a query
-incrementally and why an alias defined in `SELECT` is unusable in `WHERE`.
-Every step here takes the records the step above produced. That single
-choice removes `HAVING` (it is `where` after a `show`), removes `COALESCE`
-(`a or b` already returns the first thing that is there), and makes a
-document collection and a graph traversal the same shape as a table scan.
+**Le pipeline, pas la liste de clauses.** Le pire défaut de SQL, c'est que
+l'ordre de lecture n'est pas l'ordre d'exécution — d'où l'impossibilité de
+construire une requête petit à petit, et le fait qu'un alias défini dans le
+`SELECT` soit inutilisable dans le `WHERE`. Ici chaque étape prend les
+enregistrements que l'étape du dessus a produits. Ce seul choix supprime
+`HAVING` (c'est un `where` après un `show`), supprime `COALESCE` (`a or b`
+renvoie déjà la première valeur présente), et donne à une collection
+document et à une traversée de graphe la même forme qu'à un parcours de
+table.
 
-**Small on purpose.** What makes SurrealQL and EdgeQL hard is not their
-syntax, it is their size. The vocabulary above is the whole language, and
-keeping it that short is a decision defended query by query in
-[docs/design-notes.md](docs/design-notes.md), along with what was rejected
-and why.
+**Petit, exprès.** Ce qui rend SurrealQL et EdgeQL difficiles, ce n'est pas
+leur syntaxe, c'est leur taille. Le vocabulaire ci-dessus est le langage
+entier, et le garder aussi court est une décision défendue requête par
+requête dans [docs/design-notes.md](docs/design-notes.md), avec ce qui a été
+rejeté et pourquoi.
 
-**Nothing is inferred.** Cypher decides your grouping key by looking at
-which parts of a projection are not aggregates, so adding a field silently
-changes what a query means. Here the grouping key is what you wrote after
-`group by`, and nowhere else.
+**Rien n'est deviné.** Cypher déduit ta clé de regroupement des termes de la
+projection qui ne sont pas des agrégats, donc ajouter un champ change
+silencieusement le sens de la requête. Ici la clé est ce que tu as écrit
+après `group by`, et nulle part ailleurs.
 
-**No wire protocol.** `POST /run` over plain HTTP, JSON in and out —
-`curl` is a client. Speaking the Postgres wire protocol is a large,
-orthogonal project that adds nothing to what makes this engine useful.
+**Pas de protocole réseau.** `POST /run` en HTTP simple, du JSON dans les
+deux sens — `curl` est un client. Parler le protocole Postgres est un gros
+projet orthogonal qui n'ajoute rien à ce qui rend ce moteur utile.
 
 ## Architecture
 
-| Crate | Role |
+| Crate | Rôle |
 |---|---|
-| [`lang`](crates/lang/src) | shutup: lexer, parser, syntax tree |
-| [`storage`](crates/storage/src) | key-value backend on [redb](https://github.com/cberner/redb); records are JSON |
-| [`engine`](crates/engine/src) | runs a pipeline over storage |
-| [`server`](crates/server/src) | HTTP server (axum) |
-| [`cli`](crates/cli/src) | prompt over HTTP |
-| [`wasm`](crates/wasm/src) | the engine in a browser |
+| [`lang`](crates/lang/src) | shutup : analyse lexicale, analyse syntaxique, arbre |
+| [`storage`](crates/storage/src) | stockage clé-valeur sur [redb](https://github.com/cberner/redb) ; les enregistrements sont du JSON |
+| [`engine`](crates/engine/src) | exécute un pipeline sur le stockage |
+| [`server`](crates/server/src) | serveur HTTP (axum) |
+| [`cli`](crates/cli/src) | invite de commande par-dessus HTTP |
+| [`wasm`](crates/wasm/src) | le moteur dans un navigateur |
 
-## Status
+## État
 
-Early and single-node: no authentication, no clustering, no secondary
-indexes (a full scan backs every query, and `join` is still a nested loop).
-A shape is a claim, not a constraint — `define person { name: string }` will
-not stop `add person { nickname: "al" }` — which is what makes document
-collections possible and what makes a typed `define` documentation rather
-than a guarantee.
+Jeune et mononœud : pas d'authentification, pas de cluster, pas d'index
+secondaires (un parcours complet est derrière chaque requête, et `join` est
+encore une boucle imbriquée). Une forme est une déclaration, pas une
+contrainte — `define person { name: string }` n'empêchera pas
+`add person { nickname: "al" }` — ce qui est à la fois ce qui rend les
+collections document possibles et ce qui fait d'un `define` typé une
+documentation plutôt qu'une garantie.
 
-Not running yet, though they parse: `define … as` for naming a pipeline, and
-the built-in `collections` / `fields` / `queries`. The old SQL front end is
-still in the tree, with its own tests, until those land and it can go.
+Pas encore exécutés, bien qu'ils se parsent : `define … as` pour nommer un
+pipeline, et les collections intégrées `collections` / `fields` / `queries`.
+L'ancien frontal SQL est toujours dans l'arbre, avec ses propres tests,
+jusqu'à ce qu'ils arrivent et qu'il puisse partir.
 
-Treat it as a prototype to build against and break, not a production
-datastore.
+À prendre comme un prototype contre lequel construire et qu'on peut casser,
+pas comme une base de production.
 
-## License
+## Licence
 
 MIT.
