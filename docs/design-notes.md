@@ -308,7 +308,7 @@ add person { id: 2, name: "bob" }
 
 ```
 person | where id == 1 | set age = 31
-person | where id == 1 | set age = age + 1, seen: True
+person | where id == 1 | set age = age + 1, seen = True
 person | where age < 18 | delete
 person | delete                                 # every record, said plainly
 ```
