@@ -98,7 +98,12 @@ Counting words: `count()`, `total(x)`, `average(x)`, `lowest(x)`,
 
 ### follow
 
-Links live in a collection you control.
+Links live in a collection called `edges`, holding `from_id`, `to_id` and
+`label`. It is an ordinary collection: `edges | where label == "knows"`
+reads it like anything else.
+
+A link lands on a record of the collection the pipeline started from, so
+`follow` walks within one collection. Reaching another one is not in v0.
 
 ```
 person | where id == 1 | follow knows | show name

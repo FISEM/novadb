@@ -57,6 +57,7 @@ fn run_pipeline(store: &storage::Store, pipeline: &Pipeline) -> Result<Vec<Map<S
     // asking for a field that is provably gone.
     let mut known: Option<Vec<String>> = None;
 
+    let collection = source.name.clone();
     for step in &pipeline.steps {
         if let Some(names) = &known {
             check_fields(step, names)?;
@@ -69,7 +70,7 @@ fn run_pipeline(store: &storage::Store, pipeline: &Pipeline) -> Result<Vec<Map<S
                     .collect(),
             );
         }
-        stream = apply(store, stream, step)?;
+        stream = apply(store, &collection, stream, step)?;
     }
 
     Ok(match stream {
@@ -98,25 +99,50 @@ fn read(store: &storage::Store, name: &str) -> Result<Vec<Row>> {
         .collect())
 }
 
-fn apply(_store: &storage::Store, stream: Stream, step: &Step) -> Result<Stream> {
+fn apply(
+    store: &storage::Store,
+    collection: &str,
+    stream: Stream,
+    step: &Step,
+) -> Result<Stream> {
     let rows = match (stream, step) {
+        // A group is not a record, so only a `show` can read one.
+        (Stream::Groups(groups), Step::Show(items)) => {
+            let mut out = Vec::with_capacity(groups.len());
+            for group in &groups {
+                out.push(fold_group(group, items)?);
+            }
+            return Ok(Stream::Records(out));
+        }
         (Stream::Groups(_), _) => {
             return Err(EngineError::Unsupported(
-                "only a 'show' can follow a 'group by'".to_string(),
+                "a 'group by' makes groups, so the next step has to be a 'show'".to_string(),
             ))
         }
         (Stream::Records(rows), _) => rows,
     };
 
+    if let Step::GroupBy(keys) = step {
+        return Ok(Stream::Groups(split_into_groups(rows, keys)?));
+    }
+
     Ok(Stream::Records(match step {
         Step::Where(condition) => {
             let mut kept = Vec::with_capacity(rows.len());
             for row in rows {
-                if is_truthy(&eval(&row, condition)?) {
+                if is_truthy(&eval(Scope::on(&row), condition)?) {
                     kept.push(row);
                 }
             }
             kept
+        }
+
+        // A `show` that counts, with no `group by` above it, folds everything
+        // that reached it into one record. Nothing is being guessed here:
+        // Cypher's trouble is that it infers the grouping *key*, and with no
+        // `group by` written there is no key to infer.
+        Step::Show(items) if items.iter().any(|i| counts(&i.value)) => {
+            vec![fold_group(&rows, items)?]
         }
 
         Step::Show(items) => {
@@ -128,7 +154,7 @@ fn apply(_store: &storage::Store, stream: Stream, step: &Step) -> Result<Stream>
                         Some(alias) => alias.clone(),
                         None => output_name(&item.value),
                     };
-                    record.insert(name, eval(row, &item.value)?);
+                    record.insert(name, eval(Scope::on(row), &item.value)?);
                 }
                 // A projection makes new records, so nothing is qualified by a
                 // collection any more: only what `show` kept still exists.
@@ -142,7 +168,7 @@ fn apply(_store: &storage::Store, stream: Stream, step: &Step) -> Result<Stream>
             for row in rows {
                 let mut values = Vec::with_capacity(keys.len());
                 for key in keys {
-                    values.push(eval(&row, &key.value)?);
+                    values.push(eval(Scope::on(&row), &key.value)?);
                 }
                 keyed.push((values, row));
             }
@@ -178,6 +204,32 @@ fn apply(_store: &storage::Store, stream: Stream, step: &Step) -> Result<Stream>
             out
         }
 
+        Step::Join(join) => {
+            let right = read(store, &join.collection.name)?;
+            let mut out = Vec::new();
+            for left in &rows {
+                let mut matched = false;
+                for other in &right {
+                    let mut candidate = left.clone();
+                    candidate
+                        .sources
+                        .push((join.collection.name.clone(), other.merged()));
+                    if is_truthy(&eval(Scope::on(&candidate), &join.on)?) {
+                        matched = true;
+                        out.push(candidate);
+                    }
+                }
+                if !matched && join.keep_all {
+                    let mut candidate = left.clone();
+                    candidate.sources.push((join.collection.name.clone(), Map::new()));
+                    out.push(candidate);
+                }
+            }
+            out
+        }
+
+        Step::Follow(follow) => follow_links(store, collection, &rows, follow)?,
+
         other => {
             return Err(EngineError::Unsupported(format!(
                 "'{}' is not running yet",
@@ -185,6 +237,129 @@ fn apply(_store: &storage::Store, stream: Stream, step: &Step) -> Result<Stream>
             )))
         }
     }))
+}
+
+/// True when an expression asks for something that folds a group.
+fn counts(expr: &Expr) -> bool {
+    match expr {
+        Expr::Call { name, args, .. } => {
+            COUNTING.contains(&name.as_str()) || args.iter().any(counts)
+        }
+        Expr::Binary { left, right, .. } => counts(left) || counts(right),
+        Expr::Unary { value, .. } | Expr::IsNone { value, .. } => counts(value),
+        Expr::Comparison { first, rest, .. } => {
+            counts(first) || rest.iter().any(|(_, e)| counts(e))
+        }
+        Expr::In { value, options, .. } => counts(value) || counts(options),
+        Expr::Index { value, index, .. } => counts(value) || counts(index),
+        Expr::Method { value, args, .. } => counts(value) || args.iter().any(counts),
+        Expr::List { items, .. } => items.iter().any(counts),
+        Expr::RecordLiteral { fields, .. } => fields.iter().any(|(_, e)| counts(e)),
+        Expr::Field { .. } | Expr::Literal { .. } => false,
+    }
+}
+
+/// Turns one group into one record. Whatever does not count is read from the
+/// group's first record, which is where its grouping key lives.
+fn fold_group(group: &[Row], items: &[lang::ShowItem]) -> Result<Row> {
+    let empty = Row::empty();
+    let scope = Scope { row: group.first().unwrap_or(&empty), group: Some(group) };
+    let mut record = Map::new();
+    for item in items {
+        let name = match &item.alias {
+            Some(alias) => alias.clone(),
+            None => output_name(&item.value),
+        };
+        record.insert(name, eval(scope, &item.value)?);
+    }
+    Ok(Row::single(String::new(), record))
+}
+
+/// Splits records into groups, keeping the order each group first appeared in.
+fn split_into_groups(rows: Vec<Row>, keys: &[Expr]) -> Result<Vec<Vec<Row>>> {
+    let mut seen: Vec<Vec<Value>> = Vec::new();
+    let mut groups: Vec<Vec<Row>> = Vec::new();
+    for row in rows {
+        let mut key = Vec::with_capacity(keys.len());
+        for expr in keys {
+            key.push(eval(Scope::on(&row), expr)?);
+        }
+        match seen.iter().position(|k| *k == key) {
+            Some(at) => groups[at].push(row),
+            None => {
+                seen.push(key);
+                groups.push(vec![row]);
+            }
+        }
+    }
+    Ok(groups)
+}
+
+/// Walks a link, one step or as far as it goes.
+///
+/// Links live in a collection called `edges`, holding `from_id`, `to_id` and
+/// `label`. A link lands on a record of the collection the pipeline started
+/// from, which is what makes friends-of-friends work and what stops a link
+/// from reaching another collection. See docs/language.md.
+fn follow_links(
+    store: &storage::Store,
+    collection: &str,
+    rows: &[Row],
+    follow: &lang::Follow,
+) -> Result<Vec<Row>> {
+    let edges = read(store, "edges").map_err(|e| match e {
+        EngineError::UnknownTable(_) => EngineError::Unsupported(
+            "following a link needs a collection called 'edges', holding from_id, to_id and label"
+                .to_string(),
+        ),
+        other => other,
+    })?;
+
+    let label = Value::String(follow.link.clone());
+    let mut links: Vec<(String, Value)> = Vec::new();
+    for edge in &edges {
+        let record = edge.merged();
+        if record.get("label") != Some(&label) {
+            continue;
+        }
+        let (from, to) = (record.get("from_id"), record.get("to_id"));
+        let (start, end) = if follow.backward { (to, from) } else { (from, to) };
+        if let (Some(start), Some(end)) = (start, end) {
+            links.push((key_of(start), end.clone()));
+        }
+    }
+
+    let mut frontier: Vec<String> = rows.iter().map(|r| key_of(&r.get(None, "id"))).collect();
+    let mut reached: Vec<String> = Vec::new();
+    loop {
+        let mut next = Vec::new();
+        for (start, end) in &links {
+            if frontier.iter().any(|f| f == start) {
+                let end_key = key_of(end);
+                if !reached.contains(&end_key) {
+                    reached.push(end_key.clone());
+                    next.push(end_key);
+                }
+            }
+        }
+        if next.is_empty() || !follow.repeat {
+            break;
+        }
+        frontier = next;
+    }
+
+    Ok(read(store, collection)?
+        .into_iter()
+        .filter(|row| reached.contains(&key_of(&row.get(None, "id"))))
+        .collect())
+}
+
+/// A value as a string, so ids can be matched whatever they are made of.
+fn key_of(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
 }
 
 fn step_name(step: &Step) -> &'static str {
@@ -286,7 +461,23 @@ fn output_name(expr: &Expr) -> String {
 
 // --- Expressions ------------------------------------------------------------
 
-fn eval(row: &Row, expr: &Expr) -> Result<Value> {
+/// What an expression is evaluated against: one record, and — inside a
+/// `show` that follows a `group by` — the whole group behind it, which is
+/// what the counting words fold.
+#[derive(Clone, Copy)]
+struct Scope<'a> {
+    row: &'a Row,
+    group: Option<&'a [Row]>,
+}
+
+impl<'a> Scope<'a> {
+    fn on(row: &'a Row) -> Self {
+        Scope { row, group: None }
+    }
+}
+
+fn eval(scope: Scope<'_>, expr: &Expr) -> Result<Value> {
+    let row = scope.row;
     Ok(match expr {
         Expr::Literal { value, .. } => match value {
             Literal::Number(n) => Value::Number(n.clone()),
@@ -301,26 +492,26 @@ fn eval(row: &Row, expr: &Expr) -> Result<Value> {
             // `and` and `or` hand back one of their sides, as in Python, so
             // `v or "fallback"` is what COALESCE used to be.
             BinOp::And => {
-                let l = eval(row, left)?;
+                let l = eval(scope, left)?;
                 if is_truthy(&l) {
-                    eval(row, right)?
+                    eval(scope, right)?
                 } else {
                     l
                 }
             }
             BinOp::Or => {
-                let l = eval(row, left)?;
+                let l = eval(scope, left)?;
                 if is_truthy(&l) {
                     l
                 } else {
-                    eval(row, right)?
+                    eval(scope, right)?
                 }
             }
-            _ => arithmetic(*op, &eval(row, left)?, &eval(row, right)?)?,
+            _ => arithmetic(*op, &eval(scope, left)?, &eval(scope, right)?)?,
         },
 
         Expr::Unary { op, value, .. } => {
-            let v = eval(row, value)?;
+            let v = eval(scope, value)?;
             match op {
                 UnOp::Not => Value::Bool(!is_truthy(&v)),
                 UnOp::Negate => arithmetic(BinOp::Subtract, &Value::Number(Number::from(0)), &v)?,
@@ -328,9 +519,9 @@ fn eval(row: &Row, expr: &Expr) -> Result<Value> {
         }
 
         Expr::Comparison { first, rest, .. } => {
-            let mut left = eval(row, first)?;
+            let mut left = eval(scope, first)?;
             for (op, next) in rest {
-                let right = eval(row, next)?;
+                let right = eval(scope, next)?;
                 if !compare(*op, &left, &right) {
                     return Ok(Value::Bool(false));
                 }
@@ -340,8 +531,8 @@ fn eval(row: &Row, expr: &Expr) -> Result<Value> {
         }
 
         Expr::In { value, options, negated, .. } => {
-            let needle = eval(row, value)?;
-            let haystack = eval(row, options)?;
+            let needle = eval(scope, value)?;
+            let haystack = eval(scope, options)?;
             let found = match &haystack {
                 Value::Array(items) => items.iter().any(|i| values_equal(i, &needle)),
                 Value::Object(fields) => match &needle {
@@ -358,13 +549,13 @@ fn eval(row: &Row, expr: &Expr) -> Result<Value> {
         }
 
         Expr::IsNone { value, negated, .. } => {
-            Value::Bool(eval(row, value)?.is_null() != *negated)
+            Value::Bool(eval(scope, value)?.is_null() != *negated)
         }
 
         Expr::List { items, .. } => {
             let mut out = Vec::with_capacity(items.len());
             for item in items {
-                out.push(eval(row, item)?);
+                out.push(eval(scope, item)?);
             }
             Value::Array(out)
         }
@@ -372,14 +563,14 @@ fn eval(row: &Row, expr: &Expr) -> Result<Value> {
         Expr::RecordLiteral { fields, .. } => {
             let mut out = Map::new();
             for (name, value) in fields {
-                out.insert(name.clone(), eval(row, value)?);
+                out.insert(name.clone(), eval(scope, value)?);
             }
             Value::Object(out)
         }
 
         Expr::Index { value, index, .. } => {
-            let target = eval(row, value)?;
-            let key = eval(row, index)?;
+            let target = eval(scope, value)?;
+            let key = eval(scope, index)?;
             match (&target, &key) {
                 (Value::Array(items), Value::Number(n)) => n
                     .as_i64()
@@ -397,16 +588,16 @@ fn eval(row: &Row, expr: &Expr) -> Result<Value> {
         Expr::Call { name, args, .. } => {
             let mut values = Vec::with_capacity(args.len());
             for arg in args {
-                values.push(eval(row, arg)?);
+                values.push(eval(scope, arg)?);
             }
-            call(name, &values)?
+            call(scope, name, args, &values)?
         }
 
         Expr::Method { value, name, args, .. } => {
-            let target = eval(row, value)?;
+            let target = eval(scope, value)?;
             let mut values = Vec::with_capacity(args.len());
             for arg in args {
-                values.push(eval(row, arg)?);
+                values.push(eval(scope, arg)?);
             }
             method(&target, name, &values)?
         }
@@ -519,7 +710,70 @@ fn as_number(value: &Value) -> Option<Number> {
     }
 }
 
-fn call(name: &str, args: &[Value]) -> Result<Value> {
+/// The words that fold a group rather than reading one record.
+const COUNTING: &[&str] = &["count", "total", "average", "lowest", "highest"];
+
+fn counting(scope: Scope<'_>, name: &str, args: &[Expr]) -> Result<Option<Value>> {
+    if !COUNTING.contains(&name) {
+        return Ok(None);
+    }
+    // With no `group by` above it, a counting word folds everything that
+    // reached this step. Nothing is being guessed: Cypher's trouble is that
+    // it infers the grouping *key*, and here there is no key to infer.
+    let rows: &[Row] = match scope.group {
+        Some(group) => group,
+        None => std::slice::from_ref(scope.row),
+    };
+
+    if name == "count" {
+        return Ok(Some(Value::Number(Number::from(rows.len() as i64))));
+    }
+
+    let argument = args.first().ok_or_else(|| {
+        EngineError::Unsupported(format!("'{name}' needs a field to work on, like '{name}(age)'"))
+    })?;
+
+    let mut values = Vec::with_capacity(rows.len());
+    for row in rows {
+        let value = eval(Scope { row, group: None }, argument)?;
+        if !value.is_null() {
+            values.push(value);
+        }
+    }
+    if values.is_empty() {
+        return Ok(Some(Value::Null));
+    }
+
+    Ok(Some(match name {
+        "lowest" | "highest" => {
+            let wanted = if name == "lowest" {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            };
+            let mut best = values[0].clone();
+            for value in &values[1..] {
+                if compare_values(value, &best) == Some(wanted) {
+                    best = value.clone();
+                }
+            }
+            best
+        }
+        _ => {
+            let sum: f64 = values.iter().filter_map(|v| as_number(v)?.as_f64()).sum();
+            match name {
+                "total" => number(sum),
+                _ => number(sum / values.len() as f64),
+            }
+        }
+    }))
+}
+
+fn call(scope: Scope<'_>, name: &str, args: &[Expr], values: &[Value]) -> Result<Value> {
+    if let Some(folded) = counting(scope, name, args)? {
+        return Ok(folded);
+    }
+    let args = values;
     let first = args.first();
     Ok(match (name, first) {
         ("len", Some(v)) => Value::Number(Number::from(length(v) as i64)),
