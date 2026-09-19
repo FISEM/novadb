@@ -75,7 +75,7 @@ everywhere: pipeline steps, record bodies, shape bodies.
 ```
 person                     define person              add person
     where age > 30             id: number key             id: 1
-    show name                  name: text                 name: "alice"
+    show name                  name: string               name: "alice"
 ```
 
 **Anything indented can be written on one line instead.** Steps separate
@@ -83,7 +83,7 @@ with `|`, fields separate with `,` inside `{ }`:
 
 ```
 person | where age > 30 | show name
-define person { id: number key, name: text }
+define person { id: number key, name: string }
 add person { id: 1, name: "alice" }
 ```
 
@@ -131,10 +131,23 @@ word.
 | `average(x)` | the average |
 | `lowest(x)` / `highest(x)` | the smallest and largest |
 
+| Type | Holds |
+|---|---|
+| `number` | any number |
+| `string` | text |
+| `boolean` | `True` or `False` |
+| `any` | whatever you put there |
+
+These four are not chosen for plainness but for recognition: they are the
+names JavaScript, TypeScript, Java, C#, Go, Kotlin, Swift and Dart already
+use. A reader who has met one language has met all four. `text` was the
+first draft and is wrong — it is SQL's word and almost nothing else's.
+
 Words that were considered and rejected: `select` (does not say "only
 these fields"), `desc` and `avg` and `min` and `max` and `int` and `str`
 (abbreviations), `distinct` and `drop` and `insert` (database jargon),
-`*` for "as far as it goes" (a symbol needing a lesson).
+`*` for "as far as it goes" (a symbol needing a lesson), and `text` and
+`str` for `string` (one is SQL-only, the other is an abbreviation).
 
 ---
 
@@ -309,7 +322,7 @@ way.
 ```
 define person
     id: number key
-    name: text
+    name: string
     age: number?
 ```
 
@@ -317,7 +330,7 @@ define person
 define session          # no body: any shape, every record different
 ```
 
-Types: `number`, `text`, `boolean`, `anything`. A trailing `?` means the
+Types: `number`, `string`, `boolean`, `any`. A trailing `?` means the
 field may be missing or `None`. `key` marks the field that identifies a
 record.
 
@@ -370,7 +383,7 @@ Python's names:
 ```
 len(name)        name.upper()        name.lower()
 name.startswith("a")                 name.endswith("z")
-abs(n)           round(n)            number(x)     text(x)
+abs(n)           round(n)            number(x)     string(x)
 ```
 
 There is no `COALESCE`, because `a or b` already returns the first thing
@@ -475,19 +488,15 @@ Named so the absences are choices, not oversights.
 
 Decided one way here, and reasonably decidable the other.
 
-1. **`boolean`.** The one word in the language that fails its own rule — a
-   sixteen-year-old has not met it. Every replacement considered is worse:
-   `yesno`, `flag`, `truefalse`, `switch`. Left standing for want of a
-   better word, not because it passes.
-2. **`remove person` versus `person | delete`.** One throws away the
+1. **`remove person` versus `person | delete`.** One throws away the
    collection, the other empties it. They read alike and differ enormously.
    Is `remove` distinct enough, or does this need a longer, uglier,
    safer word?
-3. **`keep all` for left joins.** Plain English, but a two-word step in a
+2. **`keep all` for left joins.** Plain English, but a two-word step in a
    language that otherwise has none.
-4. **Counting outside `group by`.** Is `pet | show n: count()` over the
+3. **Counting outside `group by`.** Is `pet | show n: count()` over the
    whole collection allowed, or does counting always need a `group by`?
-5. **`sort` before `show`.** The spec says `sort` sees records before the
+4. **`sort` before `show`.** The spec says `sort` sees records before the
    projection drops fields. The alternative is to reject it and let the
    error teach the order. Section 9 shows the error either way.
-6. **The name.** `nova` collides with the database it queries.
+5. **The name.** `nova` collides with the database it queries.
