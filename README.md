@@ -1,5 +1,7 @@
 # novadb
 
+[![CI](https://github.com/FISEM/novadb/actions/workflows/ci.yml/badge.svg)](https://github.com/FISEM/novadb/actions/workflows/ci.yml)
+
 **Relational, document, and graph — one engine, plain SQL.** novadb gives
 you the range SurrealDB is known for: typed tables when you want structure,
 MongoDB-style schemaless collections when you don't, and graph traversal for
@@ -140,12 +142,31 @@ it.
 | [`server`](crates/server/src) | HTTP server (axum) exposing `POST /sql` |
 | [`cli`](crates/cli/src) | REPL client over HTTP |
 
+## Tests
+
+`cargo test --workspace` runs the suite: 101 tests, no fixtures to set up.
+Every engine test drives a fresh in-memory database through the same
+text-in/JSON-out path the HTTP server uses, so what the tests exercise is
+what a caller gets.
+
+| Suite | Covers |
+|---|---|
+| [`sql/tests/parser.rs`](crates/sql/tests/parser.rs) | Grammar and lexing: quoting rules, precedence, graph-sugar desugaring, parse errors |
+| [`engine/tests/relational.rs`](crates/engine/tests/relational.rs) | CRUD, `WHERE`, joins, aggregates, `GROUP BY`/`HAVING`, CTEs, `UNION`, scalar functions |
+| [`engine/tests/document.rs`](crates/engine/tests/document.rs) | Schemaless tables: mixed row shapes, absent fields, undeclared columns |
+| [`engine/tests/graph.rs`](crates/engine/tests/graph.rs) | `>` traversal: single, chained, and variable-depth hops, including cycles |
+| [`engine/tests/ordering.rs`](crates/engine/tests/ordering.rs) | `ORDER BY` resolution against dropped and renamed columns |
+| [`engine/tests/persistence.rs`](crates/engine/tests/persistence.rs) | What a file-backed database still holds after a reopen |
+
 ## Status
 
 Early and single-node: no authentication, no clustering, no secondary
-indexes (joins are fast, but a full table scan still backs every query),
-no automated test suite yet. Schema declarations aren't enforced — that's
+indexes (joins are fast, but a full table scan still backs every query).
+Schema declarations aren't enforced — that's
 what makes document collections possible, but it also means a typed
 `CREATE TABLE` today is documentation, not a guarantee; nothing stops a
 mistyped `INSERT` from smuggling in a field that doesn't belong. Treat it
 as a prototype to build against and break, not a production datastore.
+
+`cargo fmt` and `cargo clippy` are not clean yet, so CI runs the build and
+the test suite only.
