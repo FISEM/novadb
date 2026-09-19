@@ -5,6 +5,8 @@
 //! `docs/design-notes.md` for why it is shaped this way.
 
 pub mod ast;
+mod lexer;
+mod parser;
 
 pub use ast::*;
 
@@ -33,6 +35,5 @@ pub struct ParseError {
 /// Statements are separated by newlines or `;`. Empty input is no statements,
 /// not an error.
 pub fn parse(source: &str) -> Result<Vec<Statement>, ParseError> {
-    let _ = source;
-    todo!("Tests step, then Code step")
+    parser::parse_tokens(lexer::tokenize(source)?)
 }

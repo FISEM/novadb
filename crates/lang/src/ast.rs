@@ -8,11 +8,23 @@ use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
 /// Where a piece of text sits in the source, so an error can point at it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
 }
+
+/// Two spans always compare equal, so that comparing two trees compares what
+/// they mean and not where they were written. `person | where age > 30` and
+/// the same query written across three indented lines are the same tree, and
+/// tests get to say so directly. Check a span by reading `start` and `end`.
+impl PartialEq for Span {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for Span {}
 
 // --- Statements -------------------------------------------------------------
 
