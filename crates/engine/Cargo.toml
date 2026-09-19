@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 sql = { path = "../sql" }
+lang = { path = "../lang" }
 storage = { path = "../storage" }
 serde = { workspace = true }
 serde_json = { workspace = true }
