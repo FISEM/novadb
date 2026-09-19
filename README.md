@@ -34,6 +34,32 @@ cd playground && python3 -m http.server 8080
 It is a static directory, so any host will serve it. See
 [playground/README.md](playground/README.md).
 
+## Run it as a server
+
+```sh
+cargo run -p server -- --data-file demo.redb --bind 127.0.0.1:8801
+
+curl -X POST http://127.0.0.1:8801/run --data-binary '
+person
+    where age > 30
+    show name, age
+'
+```
+
+Or use the bundled prompt, which draws the records as a table and points at
+your mistakes:
+
+```sh
+cargo run -p cli -- --url http://127.0.0.1:8801
+```
+
+```
+shutup> person | take
+                     ^
+'take' needs a count after it.
+Write a whole number, like 'take 10'.
+```
+
 ## Try it in 30 seconds
 
 Needs the Rust toolchain ([rustup.rs](https://rustup.rs) if you don't have
@@ -135,9 +161,9 @@ which parts of a projection are not aggregates, so adding a field silently
 changes what a query means. Here the grouping key is what you wrote after
 `group by`, and nowhere else.
 
-**No wire protocol.** `POST /sql` over plain HTTP, JSON in and out. Speaking
-the Postgres wire protocol is a large, orthogonal project that adds nothing
-to what makes this engine useful.
+**No wire protocol.** `POST /run` over plain HTTP, JSON in and out —
+`curl` is a client. Speaking the Postgres wire protocol is a large,
+orthogonal project that adds nothing to what makes this engine useful.
 
 ## Architecture
 
@@ -160,10 +186,8 @@ collections possible and what makes a typed `define` documentation rather
 than a guarantee.
 
 Not running yet, though they parse: `define … as` for naming a pipeline, and
-the built-in `collections` / `fields` / `queries`. The HTTP server and the
-CLI still take SQL; the browser playground is the one that speaks shutup.
-The old SQL front end is still in the tree, with its own tests, until shutup
-replaces it everywhere.
+the built-in `collections` / `fields` / `queries`. The old SQL front end is
+still in the tree, with its own tests, until those land and it can go.
 
 Treat it as a prototype to build against and break, not a production
 datastore.
