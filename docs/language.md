@@ -121,7 +121,7 @@ word.
 | Statement | Does |
 |---|---|
 | `add` | puts new records in |
-| `define` | states what shape a collection's records have |
+| `define` | states what shape a collection's records have, or names a piece of a pipeline |
 | `remove` | throws a whole collection away |
 
 | Counting | Does |
@@ -350,7 +350,88 @@ remove person if exists
 
 ---
 
-## 8. The database describes itself
+## 8. Naming a piece of a pipeline
+
+SQL's worst structural failure is that it has no way to reuse a query
+except copy and paste. nova answers it with one idea and no new concepts
+in the pipeline itself.
+
+```
+define adults as
+    person
+        where age >= 18
+```
+
+`adults` is now used exactly the way `person` is:
+
+```
+adults | where city == "Paris" | sort name
+```
+
+### A name can start with a step instead of a collection
+
+Then it is a piece you pipe records into:
+
+```
+define recent as
+    where created > 1000
+    sort created down
+```
+
+```
+session | recent | take 10
+person  | recent | take 10
+```
+
+**The whole rule:** a name that starts with a collection is a source; a name
+that starts with a step is something you pipe into. The text says which, so
+there is nothing to remember — and when you get it wrong the error teaches
+the rule:
+
+```
+recent
+^^^^^^
+'recent' starts with 'where', so it needs records coming in.
+Try: person | recent
+```
+
+```
+person | adults
+         ^^^^^^
+'adults' already starts with 'person'. Use it on its own:
+adults | where ...
+```
+
+### There are no parameters, and the pipeline is why
+
+In SQL, reusing a query with a different value forces you into parameterized
+views — which means functions, arguments and scope, and a language twice the
+size. Here you compose by adding a step:
+
+```
+adults | where age > 30
+```
+
+That covers nearly everything a parameter would have been for. Parameters
+are the obvious next feature and the obvious way to double the size of this
+language, so they wait until something real cannot be written without them.
+
+### What a name is, exactly
+
+- **It is re-read, never stored.** `adults` runs its pipeline every time,
+  against the records that exist at that moment. There is no stale copy,
+  because there is no copy.
+- **It shares one list of names with collections.** `define adults as …`
+  and a collection called `adults` cannot both exist, because `adults` in a
+  query has to mean one thing.
+- **It cannot lead back to itself.** `define a as b | …` and
+  `define b as a | …` is refused when the second is written, not discovered
+  as a hang.
+- **`remove` throws it away**, the same word collections use.
+
+---
+
+## 9. The database describes itself
 
 Everything novadb knows about itself is a collection, read with the same
 words as your own data.
@@ -380,6 +461,13 @@ One record per field a `define` declared:
 | `type` | `number`, `string`, `boolean` or `any` |
 | `optional` | `True` if it was written with `?` |
 | `key` | `True` if it identifies the record |
+
+```
+queries
+```
+
+One record per name defined with `define … as`: its `name`, and the `body`
+it stands for.
 
 So the questions every database answers with its own special commands are
 just queries here:
@@ -440,7 +528,7 @@ that looks like a lookup. Left out of v0 rather than made slow and quiet.
 
 ---
 
-## 9. Expressions
+## 10. Expressions
 
 Python's, as far as they go.
 
@@ -504,7 +592,7 @@ declines to implement it.
 
 ---
 
-## 10. Errors are part of the design
+## 11. Errors are part of the design
 
 For the sixteen-year-old, error messages matter more than syntax. A language
 with an ordinary grammar and excellent errors is easier than the reverse.
@@ -537,7 +625,7 @@ name the fix.
 
 ---
 
-## 11. The sixteen-year-old test
+## 12. The sixteen-year-old test
 
 The bar this document is held to. If a query needs a paragraph of
 explanation, the design is wrong, not the reader.
@@ -558,13 +646,12 @@ Read it aloud and it is a sentence.
 
 ---
 
-## 12. Deliberately not here, yet
+## 13. Deliberately not here, yet
 
 Named so the absences are choices, not oversights.
 
-- **Composition.** No functions, no named pipelines, no reusable pieces.
-  This is the largest open question in the design: it is SQL's worst
-  structural failure, PRQL's best idea, and nova has no answer.
+- **Parameters on a name.** Section 8 says why: the pipeline composes by
+  adding a step, which is what a parameter would mostly have been for.
 - **Queries inside queries.** A pipeline branches only by joining.
 - **`add` from a query.** `add archive (session | where ts < 1000)` is
   obviously useful, left out of v0 to keep `add` one shape.
@@ -574,7 +661,7 @@ Named so the absences are choices, not oversights.
 
 ---
 
-## 13. Open questions
+## 14. Open questions
 
 Decided one way here, and reasonably decidable the other.
 
@@ -588,5 +675,5 @@ Decided one way here, and reasonably decidable the other.
    whole collection allowed, or does counting always need a `group by`?
 4. **`sort` before `show`.** The spec says `sort` sees records before the
    projection drops fields. The alternative is to reject it and let the
-   error teach the order. Section 10 shows the error either way.
+   error teach the order. Section 11 shows the error either way.
 5. **The name.** `nova` collides with the database it queries.
