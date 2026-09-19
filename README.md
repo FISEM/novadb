@@ -1,5 +1,7 @@
 # novadb
 
+*English · [Français](README.fr.md)*
+
 [![CI](https://github.com/FISEM/novadb/actions/workflows/ci.yml/badge.svg)](https://github.com/FISEM/novadb/actions/workflows/ci.yml)
 
 **Relational, document and graph — one engine, one pipeline.** Typed
