@@ -350,7 +350,97 @@ remove person if exists
 
 ---
 
-## 8. Expressions
+## 8. The database describes itself
+
+Everything novadb knows about itself is a collection, read with the same
+words as your own data.
+
+```
+collections
+```
+
+One record per collection:
+
+| Field | Holds |
+|---|---|
+| `name` | what the collection is called |
+| `shaped` | `True` if its `define` had a body |
+| `records` | how many records it holds |
+
+```
+fields
+```
+
+One record per field a `define` declared:
+
+| Field | Holds |
+|---|---|
+| `collection` | which collection it belongs to |
+| `name` | what the field is called |
+| `type` | `number`, `string`, `boolean` or `any` |
+| `optional` | `True` if it was written with `?` |
+| `key` | `True` if it identifies the record |
+
+So the questions every database answers with its own special commands are
+just queries here:
+
+```
+collections | sort records down | take 5
+
+fields
+    where collection == "person"
+    show name, type
+
+collections
+    join fields on fields.collection == collections.name
+    group by collections.name
+    show name, how_many: count()
+```
+
+They describe themselves, too, which is how you find out what is in them
+without reading this page:
+
+```
+fields | where collection == "collections"
+```
+
+**No new words.** `SHOW TABLES`, `DESCRIBE`, `information_schema` — none of
+them exist here, because none of them are separate things. An admin screen
+is a query. A migration tool is a query. This section adds nothing to
+section 3's vocabulary, and that is the entire point of it.
+
+### They are read-only
+
+`add`, `set` and `delete` do not work on them. Changing a collection's shape
+by writing to a record about that shape would be clever, unreadable, and an
+excellent way to destroy a database with a typo. `define` and `remove` stay
+the only way.
+
+```
+add collections { name: "person" }
+    ^^^^^^^^^^^
+collections is how the database describes itself, so it cannot be written to.
+Use 'define person' to make a collection.
+```
+
+### Their names are taken
+
+```
+define collections
+       ^^^^^^^^^^^
+'collections' is a built-in name. Pick a different one.
+```
+
+### One thing it does not answer yet
+
+For a collection defined with no body, `fields` is empty — though its
+records plainly have fields. Reporting the fields records actually carry
+means reading every record, which is expensive and surprising for something
+that looks like a lookup. Left out of v0 rather than made slow and quiet.
+
+---
+
+## 9. Expressions
 
 Python's, as far as they go.
 
@@ -414,7 +504,7 @@ declines to implement it.
 
 ---
 
-## 9. Errors are part of the design
+## 10. Errors are part of the design
 
 For the sixteen-year-old, error messages matter more than syntax. A language
 with an ordinary grammar and excellent errors is easier than the reverse.
@@ -447,7 +537,7 @@ name the fix.
 
 ---
 
-## 10. The sixteen-year-old test
+## 11. The sixteen-year-old test
 
 The bar this document is held to. If a query needs a paragraph of
 explanation, the design is wrong, not the reader.
@@ -468,7 +558,7 @@ Read it aloud and it is a sentence.
 
 ---
 
-## 11. Deliberately not here, yet
+## 12. Deliberately not here, yet
 
 Named so the absences are choices, not oversights.
 
@@ -484,7 +574,7 @@ Named so the absences are choices, not oversights.
 
 ---
 
-## 12. Open questions
+## 13. Open questions
 
 Decided one way here, and reasonably decidable the other.
 
@@ -498,5 +588,5 @@ Decided one way here, and reasonably decidable the other.
    whole collection allowed, or does counting always need a `group by`?
 4. **`sort` before `show`.** The spec says `sort` sees records before the
    projection drops fields. The alternative is to reject it and let the
-   error teach the order. Section 9 shows the error either way.
+   error teach the order. Section 10 shows the error either way.
 5. **The name.** `nova` collides with the database it queries.
