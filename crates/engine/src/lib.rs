@@ -1,4 +1,5 @@
 mod exec;
+mod shutup;
 mod value;
 
 use std::path::Path;
@@ -14,6 +15,8 @@ pub use storage::StorageError;
 pub enum EngineError {
     #[error("parse error: {0}")]
     Parse(#[from] sql::ParseError),
+    #[error("{0}")]
+    Shutup(#[from] lang::ParseError),
     #[error(transparent)]
     Storage(#[from] storage::StorageError),
     #[error("unknown table '{0}'")]
@@ -22,6 +25,10 @@ pub enum EngineError {
     ColumnCountMismatch(String),
     #[error("unsupported: {0}")]
     Unsupported(String),
+    /// A query the engine understood and would not run, explained in full.
+    /// Printed as written: the message is the whole error.
+    #[error("{0}")]
+    Refused(String),
 }
 
 pub type Result<T> = std::result::Result<T, EngineError>;
@@ -58,6 +65,16 @@ impl Database {
 
     pub fn list_tables(&self) -> Result<Vec<String>> {
         Ok(self.store.list_tables()?)
+    }
+
+    /// Runs shutup source: novadb's own query language.
+    pub fn run(&self, source: &str) -> Result<Vec<ExecResult>> {
+        let statements = lang::parse(source)?;
+        let mut results = Vec::with_capacity(statements.len());
+        for stmt in &statements {
+            results.push(shutup::run_statement(&self.store, stmt)?);
+        }
+        Ok(results)
     }
 
     pub fn execute(&self, sql_text: &str) -> Result<Vec<ExecResult>> {

@@ -2,171 +2,196 @@
 
 [![CI](https://github.com/FISEM/novadb/actions/workflows/ci.yml/badge.svg)](https://github.com/FISEM/novadb/actions/workflows/ci.yml)
 
-**Relational, document, and graph — one engine, plain SQL.** novadb gives
-you the range SurrealDB is known for: typed tables when you want structure,
-MongoDB-style schemaless collections when you don't, and graph traversal for
-relationships — without a proprietary query language. If you already know
-`SELECT`/`JOIN`/`WHERE`, you already know almost all of it.
+**Relational, document and graph — one engine, one pipeline.** Typed
+collections when you want structure, schemaless ones when you don't, and
+links you can walk. Not three query styles bolted together: the same steps,
+in the same order, over all three.
 
-```sql
--- relational: typed columns, like always
-CREATE TABLE person (id INTEGER PRIMARY KEY, name TEXT);
-
--- document: no columns declared, any shape per row — a real collection
-CREATE TABLE session;
-INSERT INTO session (device, cart) VALUES ('mobile', '{"items": 3}');
-
--- graph: relationships as data, traversed with sugar over a plain edges table
-CREATE TABLE edges (id INTEGER PRIMARY KEY, from_id INTEGER, to_id INTEGER, label TEXT);
-INSERT INTO edges (from_id, to_id, label) VALUES (1, 2, 'knows'), (2, 3, 'knows');
-
--- "who does alice know, directly or transitively?" — any depth, cycle-safe
-SELECT p2.name FROM person p1 > knows* > person p2 WHERE p1.id = 1;
+```
+person
+    where age > 30
+    keep following knows
+    sort age down
+    show name, age
 ```
 
-No `->edge->table` grammar, no `db.collection.insertOne`, no wire protocol to
-configure — just SQL, plus one small piece of sugar (`>`) that compiles
-straight down to a `JOIN` (or a `WITH RECURSIVE` for the `*` variable-depth
-case). Any tool that speaks SQL can still query every table directly, schemaless
-ones included.
+Read it top to bottom and that is the order it happens. There is no clause
+order to memorize, nothing written first that runs last.
 
-**[Try it in your browser →](https://claude.ai/artifact/7G6g4qj5qoovtQob5gvhv9)**
-No install, no server — the real engine compiled to WebAssembly, running
-entirely client-side.
+**The language is called shutup.** Not an accident — it is what the query
+does to the ceremony. No `SELECT`, no `FROM`, no `GROUP BY … HAVING`: you
+name a collection and say what to do with it, one step per line.
 
-## Try it in 30 seconds
+## Try it in your browser
 
-Needs the Rust toolchain ([rustup.rs](https://rustup.rs) if you don't have
-it — `cargo --version` to check).
+`playground/` is the real engine compiled to WebAssembly. No install, no
+server, nothing leaves the page.
 
 ```sh
-git clone https://github.com/FISEM/novadb.git && cd novadb
-cargo run -p server -- --data-file demo.redb --bind 127.0.0.1:8801 &
-curl -X POST http://127.0.0.1:8801/sql --data-binary "
-  CREATE TABLE person (id INTEGER PRIMARY KEY, name TEXT);
-  INSERT INTO person (id, name) VALUES (1, 'alice');
-  SELECT * FROM person;
-"
+cd playground && python3 -m http.server 8080
 ```
 
-Or use the bundled REPL instead of curl:
+It is a static directory, so any host will serve it. See
+[playground/README.md](playground/README.md).
+
+## Run it as a server
+
+```sh
+cargo run -p server -- --data-file demo.redb --bind 127.0.0.1:8801
+
+curl -X POST http://127.0.0.1:8801/run --data-binary '
+person
+    where age > 30
+    show name, age
+'
+```
+
+Or use the bundled prompt, which draws the records as a table and points at
+your mistakes:
 
 ```sh
 cargo run -p cli -- --url http://127.0.0.1:8801
 ```
 
-To build the browser playground yourself instead of using the hosted one
-above: `crates/wasm` compiles the engine to WebAssembly via `wasm-bindgen`
-(`cargo build -p novadb-wasm --target wasm32-unknown-unknown --release`,
-then `wasm-bindgen --target web --out-dir crates/wasm/pkg <wasm file>`),
-and `crates/wasm/playground.html` is the static page that loads it — open
-it from that directory once `pkg/` exists.
-
-## What you get
-
-- **Standard SQL**: `CREATE TABLE`, `INSERT`/`SELECT`/`UPDATE`/`DELETE`,
-  `JOIN` (inner/left), `WHERE`, `GROUP BY`/`HAVING`, `ORDER BY`/`LIMIT`/
-  `OFFSET`, `WITH [RECURSIVE]` CTEs, `UNION [ALL]`, aggregates (`COUNT`,
-  `SUM`, `AVG`, `MIN`, `MAX`), scalar functions (`UPPER`, `LOWER`,
-  `LENGTH`, `ABS`, `ROUND`, `COALESCE`, `CONCAT`).
-- **Document collections**: `CREATE TABLE foo;` with no column list makes
-  a schemaless table — every row can carry different fields, like a
-  MongoDB collection — plus a `JSON`/`JSONB` column type with `->`/`->>`
-  operators for nested fields inside an otherwise typed table.
-- **Graph traversal**: the `>` sugar above — single hop, chained fixed
-  hops, or `*` for "any depth", all over a plain `edges` table you fully
-  control.
-- **Simple transport**: `POST /sql` over plain HTTP, JSON in and out. No
-  driver, no wire protocol, `curl` works fine.
-
-String literals use single quotes (`'text'`); double quotes are for
-quoted identifiers, per the SQL standard — this trips up anyone coming
-from languages that treat `"..."` as a string.
-
-### More document examples
-
-```sql
-CREATE TABLE session;
-
-INSERT INTO session (user_id, device) VALUES (1, 'mobile');
-INSERT INTO session (payload, ts) VALUES ('{"foo": "bar"}', 12345);
-
-SELECT * FROM session;
--- both rows come back, each keeping only the fields it was given
+```
+shutup> person | take
+                     ^
+'take' needs a count after it.
+Write a whole number, like 'take 10'.
 ```
 
-`INSERT` never validates column names against a declared schema — that's
-true for every table, not just schemaless ones — so this works precisely
-because nothing stops you from inserting fields nobody declared. A typed
-`CREATE TABLE` is a convention your queries can rely on, not a constraint
-the engine enforces (yet).
+## Try it in 30 seconds
 
-### More graph examples
+Needs the Rust toolchain ([rustup.rs](https://rustup.rs) if you don't have
+it).
 
-```sql
--- chained fixed hops
-SELECT p3.name FROM person p1 > knows > person p2 > knows > person p3 WHERE p1.id = 1;
-
--- mixing a bounded hop with a variable-depth one
-SELECT p3.name FROM person p1 > knows* > person p2 > follows > person p3 WHERE p1.id = 1;
+```sh
+git clone https://github.com/FISEM/novadb.git && cd novadb
+cargo test --workspace
 ```
 
-Only the outgoing direction (`>`) exists today; incoming (`<`) is planned
-but needs a distinct syntax to avoid clashing with `<` followed by a
-negative number (`x<-5`).
+232 tests, no fixtures to set up. They are the fastest way to see what the
+language does — [`crates/engine/tests`](crates/engine/tests) reads like a
+tour.
 
-## Why it's built this way
+## The whole language
 
-**No custom query language.** The alternative to `>` traversal sugar was
-inventing a full SurrealQL-style grammar. That throws away the one thing
-SQL gives you for free: every tool, ORM, and SQL-literate developer
-already knows how to use it. The graph sugar is a thin desugaring layer
-in the parser ([`parser.rs`](crates/sql/src/parser.rs),
-`parse_graph_hops` / `reachability_cte`) — turn it into a `JOIN` /
-`WITH RECURSIVE`, done, nothing new to teach.
+Twelve steps, three statements, five counting words. If a word needs a
+glossary, it is the wrong word.
 
-**No pg-wire protocol.** Speaking the real Postgres wire protocol (auth,
-extended query protocol, type OIDs) is a large, orthogonal project that
-doesn't add to what makes this engine useful. Plain HTTP/JSON gets you
-the same result — send text, get JSON — for a fraction of the effort. A
-pg-wire adapter is a plausible add-on later, once the core engine earns
-it.
+| Step | Does |
+|---|---|
+| `where` | keeps matching records |
+| `show` | keeps, renames, or computes fields |
+| `sort` | orders — `up` by default, `down` to reverse |
+| `take` / `skip` | keeps / drops the first few |
+| `unique` | drops repeats |
+| `join … on …` | pairs with records from elsewhere |
+| `group by` | splits the stream into groups |
+| `follow` / `keep following` | walks a link one step / all the way |
+| `set` / `delete` | changes / removes records |
+
+`add` puts records in, `define` states a shape or names a pipeline, `remove`
+throws a collection away. Counting: `count()`, `total(x)`, `average(x)`,
+`lowest(x)`, `highest(x)`.
+
+Expressions are Python's — `and` / `or` / `not`, `in`, `is None`, chained
+comparisons like `18 < age < 65`, `len(name)`, `name.upper()` — and so is
+truthiness. `None` is an ordinary value: `None == None` is true, and there
+is no three-valued logic to hold in your head.
+
+Full reference: [docs/language.md](docs/language.md).
+
+### Three shapes, one pipeline
+
+```
+# relational — typed collections
+define person { id: number key, name: string, age: number }
+person | where age > 30 | show name
+
+# document — no body, so every record may differ
+define session
+add session { device: "mobile", cart: 3 }
+add session { note: "a different shape entirely" }
+
+# graph — links in an ordinary collection you can read
+person | where name == "alice" | keep following knows | show name
+```
+
+### Deleting is the same query, plus one line
+
+```
+person | where age < 18            # look at them
+person | where age < 18 | delete   # remove exactly those
+```
+
+In SQL you rewrite a `SELECT` into a `DELETE` and hope the `WHERE` survived
+the edit. Here the destructive query *is* the safe one with a step added.
+
+### It refuses rather than answering wrongly
+
+```
+person | show name | sort age
+'age' was dropped by an earlier 'show', which kept only name.
+Move this step above the show, or add age to it.
+```
+
+Every error names the thing, says what is wrong in a full sentence, and
+names the fix. Silently returning nothing is the failure this language
+exists to avoid.
+
+## Why it is built this way
+
+**The pipeline, not the clause list.** SQL's worst property is that reading
+order is not execution order, which is why you cannot build a query
+incrementally and why an alias defined in `SELECT` is unusable in `WHERE`.
+Every step here takes the records the step above produced. That single
+choice removes `HAVING` (it is `where` after a `show`), removes `COALESCE`
+(`a or b` already returns the first thing that is there), and makes a
+document collection and a graph traversal the same shape as a table scan.
+
+**Small on purpose.** What makes SurrealQL and EdgeQL hard is not their
+syntax, it is their size. The vocabulary above is the whole language, and
+keeping it that short is a decision defended query by query in
+[docs/design-notes.md](docs/design-notes.md), along with what was rejected
+and why.
+
+**Nothing is inferred.** Cypher decides your grouping key by looking at
+which parts of a projection are not aggregates, so adding a field silently
+changes what a query means. Here the grouping key is what you wrote after
+`group by`, and nowhere else.
+
+**No wire protocol.** `POST /run` over plain HTTP, JSON in and out —
+`curl` is a client. Speaking the Postgres wire protocol is a large,
+orthogonal project that adds nothing to what makes this engine useful.
 
 ## Architecture
 
 | Crate | Role |
 |---|---|
-| [`sql`](crates/sql/src) | Lexer, parser, AST — including the `>` graph sugar |
-| [`storage`](crates/storage/src) | Key-value backend on [redb](https://github.com/cberner/redb); rows are JSON documents |
-| [`engine`](crates/engine/src) | Executes statements: joins (hash-join fast path for equi-joins), aggregates, recursive CTEs |
-| [`server`](crates/server/src) | HTTP server (axum) exposing `POST /sql` |
-| [`cli`](crates/cli/src) | REPL client over HTTP |
-
-## Tests
-
-`cargo test --workspace` runs the suite: 101 tests, no fixtures to set up.
-Every engine test drives a fresh in-memory database through the same
-text-in/JSON-out path the HTTP server uses, so what the tests exercise is
-what a caller gets.
-
-| Suite | Covers |
-|---|---|
-| [`sql/tests/parser.rs`](crates/sql/tests/parser.rs) | Grammar and lexing: quoting rules, precedence, graph-sugar desugaring, parse errors |
-| [`engine/tests/relational.rs`](crates/engine/tests/relational.rs) | CRUD, `WHERE`, joins, aggregates, `GROUP BY`/`HAVING`, CTEs, `UNION`, scalar functions |
-| [`engine/tests/document.rs`](crates/engine/tests/document.rs) | Schemaless tables: mixed row shapes, absent fields, undeclared columns |
-| [`engine/tests/graph.rs`](crates/engine/tests/graph.rs) | `>` traversal: single, chained, and variable-depth hops, including cycles |
-| [`engine/tests/ordering.rs`](crates/engine/tests/ordering.rs) | `ORDER BY` resolution against dropped and renamed columns |
-| [`engine/tests/persistence.rs`](crates/engine/tests/persistence.rs) | What a file-backed database still holds after a reopen |
+| [`lang`](crates/lang/src) | shutup: lexer, parser, syntax tree |
+| [`storage`](crates/storage/src) | key-value backend on [redb](https://github.com/cberner/redb); records are JSON |
+| [`engine`](crates/engine/src) | runs a pipeline over storage |
+| [`server`](crates/server/src) | HTTP server (axum) |
+| [`cli`](crates/cli/src) | prompt over HTTP |
+| [`wasm`](crates/wasm/src) | the engine in a browser |
 
 ## Status
 
 Early and single-node: no authentication, no clustering, no secondary
-indexes (joins are fast, but a full table scan still backs every query).
-Schema declarations aren't enforced — that's
-what makes document collections possible, but it also means a typed
-`CREATE TABLE` today is documentation, not a guarantee; nothing stops a
-mistyped `INSERT` from smuggling in a field that doesn't belong. Treat it
-as a prototype to build against and break, not a production datastore.
+indexes (a full scan backs every query, and `join` is still a nested loop).
+A shape is a claim, not a constraint — `define person { name: string }` will
+not stop `add person { nickname: "al" }` — which is what makes document
+collections possible and what makes a typed `define` documentation rather
+than a guarantee.
 
-`cargo fmt` and `cargo clippy` are not clean yet, so CI runs the build and
-the test suite only.
+Not running yet, though they parse: `define … as` for naming a pipeline, and
+the built-in `collections` / `fields` / `queries`. The old SQL front end is
+still in the tree, with its own tests, until those land and it can go.
+
+Treat it as a prototype to build against and break, not a production
+datastore.
+
+## License
+
+MIT.

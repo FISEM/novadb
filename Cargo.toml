@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/sql",
+    "crates/lang",
     "crates/storage",
     "crates/engine",
     "crates/server",
@@ -16,7 +17,9 @@ license = "MIT"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# preserve_order keeps a record's fields in the order they were written,
+# so `show name, age` comes back as name then age rather than sorted.
+serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "1"
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }

@@ -6,11 +6,11 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use clap::Parser;
-use engine::Database;
+use engine::{Database, EngineError};
 use serde_json::{json, Value};
 
 #[derive(Parser, Debug)]
-#[command(name = "novadb-server", about = "novadb: a standard-SQL database engine with SurrealDB-like capabilities")]
+#[command(name = "novadb-server", about = "novadb: relational, document and graph in one pipeline")]
 struct Args {
     /// Path to the database file on disk.
     #[arg(long, default_value = "novadb.redb")]
@@ -39,7 +39,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/health", get(health))
-        .route("/sql", post(run_sql))
+        .route("/run", post(run))
         .with_state(state);
 
     let addr: SocketAddr = args.bind.parse().unwrap_or_else(|_| {
@@ -47,7 +47,7 @@ async fn main() {
         std::process::exit(1);
     });
 
-    tracing::info!("novadb listening on http://{addr}  (POST SQL text to /sql)");
+    tracing::info!("novadb listening on http://{addr}  (POST shutup source to /run)");
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
@@ -56,18 +56,29 @@ async fn health() -> &'static str {
     "ok"
 }
 
-async fn run_sql(State(state): State<Arc<AppState>>, body: String) -> (StatusCode, Json<Value>) {
-    match state.db.execute(&body) {
+/// Runs shutup source. One result per statement, or a single error carrying
+/// the message, the fix, and where in the source to point — the same shape
+/// the browser playground reads.
+async fn run(State(state): State<Arc<AppState>>, body: String) -> (StatusCode, Json<Value>) {
+    match state.db.run(&body) {
         Ok(results) => {
-            let json_results: Vec<Value> = results
-                .iter()
-                .map(|r| json!({ "status": "OK", "result": r }))
-                .collect();
-            (StatusCode::OK, Json(Value::Array(json_results)))
+            let each: Vec<Value> =
+                results.iter().map(|r| json!({ "status": "OK", "result": r })).collect();
+            (StatusCode::OK, Json(Value::Array(each)))
         }
-        Err(e) => (
+        Err(EngineError::Shutup(parse)) => (
             StatusCode::BAD_REQUEST,
-            Json(json!([{ "status": "ERR", "detail": e.to_string() }])),
+            Json(json!([{
+                "status": "ERR",
+                "detail": parse.message,
+                "help": parse.help,
+                "start": parse.span.start,
+                "end": parse.span.end,
+            }])),
+        ),
+        Err(other) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!([{ "status": "ERR", "detail": other.to_string() }])),
         ),
     }
 }
